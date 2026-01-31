@@ -40,22 +40,6 @@ docker run -d -p 8000:8000 --name yt2mp3-app yt2mp3
 
 Visit [http://localhost:8000](http://localhost:8000) to access the UI.
 
-## 📤 Publishing to Docker Hub
-
-1.  **Login to Docker Hub**:
-    ```bash
-    docker login
-    ```
-2.  **Tag your image**:
-    Replace `<username>` with your Docker Hub username.
-    ```bash
-    docker tag yt2mp3 <username>/yt2mp3:latest
-    ```
-3.  **Push the image**:
-    ```bash
-    docker push <username>/yt2mp3:latest
-    ```
-
 ## 📁 Project Structure
 - `main.py`: FastAPI backend & API endpoints.
 - `youtube_downloader.py`: Core logic for YouTube validation and downloading.
