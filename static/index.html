@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YT2MP3 | High Quality Downloader</title>
+    <title>YT2MP3</title>
     <link rel="icon" href="https://fav.farm/🎧" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -264,12 +264,23 @@
     <div class="container">
         <div class="card">
             <h1>YT2MP3</h1>
-            <p class="subtitle">Download high-quality audio instantly</p>
+            <p class="subtitle">Upload Youtube to Jellyfin</p>
 
             <div class="input-group">
                 <input type="text" id="urlInput" placeholder="Paste YouTube URL here...">
                 <i data-lucide="link" class="input-icon"></i>
                 <div id="errorMsg" class="error-msg">Please enter a valid YouTube URL</div>
+            </div>
+
+            <div class="options-group">
+                <label class="toggle-container">
+                    <input type="checkbox" id="namingToggle">
+                    <span class="checkmark"></span>
+                    <div class="toggle-text">
+                        <span class="toggle-label">Use Hash + Timestamp</span>
+                        <span class="toggle-sub">Naming like: videoID_20240101.mp3</span>
+                    </div>
+                </label>
             </div>
 
             <div id="preview" class="preview">
@@ -293,21 +304,141 @@
             </div>
 
             <button id="downloadBtn" disabled>
-                <i data-lucide="download"></i>
-                <span>Download MP3</span>
+                <i data-lucide="save"></i>
+                <span>Upload</span>
             </button>
 
             <div id="success" class="success-checkmark">
                 <i data-lucide="check-circle" style="width: 48px; height: 48px; margin: 0 auto 0.5rem;"></i>
-                <p>Download complete!</p>
+                <p>Saved successfully!</p>
             </div>
         </div>
     </div>
+
+    <!-- Toast Container -->
+    <div id="toast" class="toast">
+        <div class="toast-content">
+            <i data-lucide="folder-check" class="toast-icon"></i>
+            <div class="toast-text">
+                <p class="toast-title">File Saved</p>
+                <p id="toastPath" class="toast-path">...</p>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .options-group {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 0.75rem 1rem;
+        }
+
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            gap: 1rem;
+        }
+
+        .toggle-container input {
+            display: none;
+        }
+
+        .checkmark {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--card-border);
+            border-radius: 6px;
+            position: relative;
+            transition: all 0.3s ease;
+            flex-shrink: 0;
+        }
+
+        .toggle-container input:checked+.checkmark {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .toggle-container input:checked+.checkmark::after {
+            content: '';
+            position: absolute;
+            left: 6px;
+            top: 2px;
+            width: 5px;
+            height: 10px;
+            border: solid white;
+            border-width: 0 2px 2px 0;
+            transform: rotate(45deg);
+        }
+
+        .toggle-text {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .toggle-label {
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .toggle-sub {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+
+        /* Toast Styles */
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: #1a1c23;
+            border: 1px solid var(--primary);
+            border-radius: 16px;
+            padding: 1rem 1.5rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 1000;
+            opacity: 0;
+            max-width: 90%;
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+
+        .toast-content {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .toast-icon {
+            color: var(--primary);
+            width: 24px;
+            height: 24px;
+        }
+
+        .toast-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .toast-path {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            font-family: monospace;
+            word-break: break-all;
+        }
+    </style>
 
     <script>
         lucide.createIcons();
 
         const urlInput = document.getElementById('urlInput');
+        const namingToggle = document.getElementById('namingToggle');
         const downloadBtn = document.getElementById('downloadBtn');
         const errorMsg = document.getElementById('errorMsg');
         const preview = document.getElementById('preview');
@@ -319,6 +450,8 @@
         const status = document.getElementById('status');
         const percent = document.getElementById('percent');
         const success = document.getElementById('success');
+        const toast = document.getElementById('toast');
+        const toastPath = document.getElementById('toastPath');
 
         let session_id = null;
         let pollingInterval = null;
@@ -348,6 +481,7 @@
 
         downloadBtn.addEventListener('click', async () => {
             const url = urlInput.value.trim();
+            const useHash = namingToggle.checked;
             session_id = Math.random().toString(36).substring(7);
 
             downloadBtn.disabled = true;
@@ -357,10 +491,22 @@
             // Start polling progress
             startPolling();
 
-            // Trigger the download stream
-            // We use window.location to trigger browser download
-            const downloadUrl = `/stream?url=${encodeURIComponent(url)}&session_id=${session_id}`;
-            window.location.href = downloadUrl;
+            try {
+                const response = await fetch(`save?url=${encodeURIComponent(url)}&use_hash=${useHash}&session_id=${session_id}`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    showToast(data.path);
+                } else {
+                    status.textContent = "Error: " + (data.detail || "Save failed");
+                    status.style.color = "#ff4d4d";
+                }
+            } catch (e) {
+                status.textContent = "Connection error";
+                status.style.color = "#ff4d4d";
+            }
         });
 
         function showPreview(data) {
@@ -375,6 +521,7 @@
             downloadBtn.disabled = true;
             progress.style.display = 'none';
             success.style.display = 'none';
+            status.style.color = 'var(--text-dim)';
             if (pollingInterval) clearInterval(pollingInterval);
         }
 
@@ -393,8 +540,7 @@
                         status.textContent = data.status === 'processing' ? 'Converting...' : `Downloading... (${data.speed || ''})`;
                     }
 
-                    if (data.status === 'finished' || (data.status === 'not_started' && progressBar.style.width === '100%')) {
-                        // Sometimes the session is cleared before we get the 'finished' status
+                    if (data.status === 'finished') {
                         completeUI();
                     }
                 } catch (e) {
@@ -410,10 +556,18 @@
             status.textContent = 'Finished!';
             downloadBtn.disabled = false;
             success.style.display = 'block';
-            // Hide progress after a while
+
             setTimeout(() => {
                 progress.style.display = 'none';
             }, 3000);
+        }
+
+        function showToast(path) {
+            toastPath.textContent = path;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 5000);
         }
 
         function debounce(func, wait) {

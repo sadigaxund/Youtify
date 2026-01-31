@@ -18,6 +18,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Set environment variable for the save directory (can be overridden at runtime)
+ENV SAVE_DIRECTORY=~/Downloads
+
+# Create the default storage directory and set permissions
+RUN mkdir -p ~/Downloads && chmod 777 ~/Downloads
+
 # Copy the rest of the application code
 COPY . .
 
