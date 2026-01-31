@@ -1,4 +1,4 @@
-# YouTube Audio Downloader (YT2Nextcloud)
+# YT-Audio
 
 A modern, high-quality YouTube audio downloader with a sleek web interface.
 
@@ -7,7 +7,7 @@ A modern, high-quality YouTube audio downloader with a sleek web interface.
 ### 1. Install Dependencies
 Ensure you have Python installed, then run:
 ```bash
-pip install yt-dlp fastapi uvicorn
+pip install -r requirements.txt
 ```
 
 ### 2. Install FFmpeg
@@ -24,30 +24,32 @@ python main.py
 ### 4. Open in Browser
 Visit [http://localhost:8000](http://localhost:8000)
 
-## � Running with Docker
+## 🐳 Running with Docker
 
 If you prefer to run the application in a container:
 
 ### 1. Build the Image
 ```bash
-docker build -t yt-downloader .
+docker build -t yt-audio .
 ```
 
 ### 2. Run the Container
 ```bash
-docker run -d -p 8000:8000 --name yt-downloader-app yt-downloader
+docker run -d -p 8000:8000 --name yt-audio-app yt-audio
 ```
 
 Visit [http://localhost:8000](http://localhost:8000) to access the UI.
 
-## �📁 Project Structure
+## 📁 Project Structure
 - `main.py`: FastAPI backend & API endpoints.
 - `youtube_downloader.py`: Core logic for YouTube validation and downloading.
 - `static/index.html`: Modern, single-page web UI.
-- `static/`: Folder containing the frontend assets.
+- `requirements.txt`: Python package dependencies.
+- `Dockerfile`: Containerization setup.
 
 ## 🛠 Features
 - **320kbps MP3**: Highest quality audio extraction.
 - **Real-time Progress**: Visual feedback during download and conversion.
 - **Auto-Cleanup**: Temporary files are deleted immediately after streaming.
 - **Metadata Preview**: Sees video title and thumbnail before downloading.
+- **Modern UI**: Clean, responsive, glassmorphism design.

@@ -13,9 +13,9 @@ from pydantic import BaseModel
 from youtube_downloader import validate_youtube_url, download_youtube_audio, get_video_info
 
 app = FastAPI(
-    title="YouTube Audio Downloader",
-    description="API to stream YouTube videos as MP3 audio",
-    version="1.2.0"
+    title="YT2MP3",
+    description="High-quality YouTube Audio Downloader",
+    version="1.2.1"
 )
 
 # Store progress in-memory (simple session-based)
