@@ -1,5 +1,5 @@
 
-# Youtify (YT2MP3)
+# Youtify
 
 A modern, web-based tool for downloading high-quality audio from YouTube with advanced processing features.
 
