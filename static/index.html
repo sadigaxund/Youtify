@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YT2MP3 | High Quality Downloader</title>
+    <title>Youtify</title>
     <link rel="icon" href="https://fav.farm/🎧" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -107,24 +107,22 @@
             transition: all 0.3s ease;
         }
 
-        input:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 4px var(--primary-glow);
-            background: rgba(255, 255, 255, 0.05);
-        }
-
         .input-icon {
             position: absolute;
             left: 1rem;
-            top: 1.1rem;
+            top: 50%;
+            transform: translateY(-50%);
             color: var(--text-dim);
             pointer-events: none;
-            transition: color 0.3s ease;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         input:focus+.input-icon {
             color: var(--primary);
+            transform: translateY(-50%) scale(1.1);
         }
 
         button {
@@ -161,11 +159,13 @@
         }
 
         .preview {
-            padding-top: 1.5rem;
-            border-top: 1px solid var(--card-border);
+            padding: 1.5rem;
+            border: 1px solid var(--card-border);
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 20px;
             display: none;
             flex-direction: column;
-            gap: 1.5rem;
+            gap: 1.25rem;
             animation: slideDown 0.4s ease-out;
         }
 
@@ -188,8 +188,8 @@
         }
 
         .thumbnail {
-            width: 80px;
-            height: 80px;
+            width: 70px;
+            height: 70px;
             border-radius: 12px;
             object-fit: cover;
             border: 1px solid var(--card-border);
@@ -202,8 +202,8 @@
         }
 
         .info h3 {
-            font-size: 1rem;
-            margin-bottom: 0.25rem;
+            font-size: 0.95rem;
+            margin-bottom: 0.2rem;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -211,43 +211,484 @@
 
         .info p {
             color: var(--text-dim);
-            font-size: 0.85rem;
+            font-size: 0.8rem;
         }
 
-        .progress-container {
-            display: none;
+        /* Unified Media Controls */
+        .media-player {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
         }
 
-        .progress-bar-bg {
-            width: 100%;
-            height: 8px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 4px;
-            overflow: hidden;
-            margin-bottom: 0.5rem;
+        .playback-controls {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
         }
 
-        .progress-bar-fill {
-            height: 100%;
+        .play-pause-btn {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
             background: var(--primary);
-            width: 0%;
-            transition: width 0.3s ease;
-            box-shadow: 0 0 10px var(--primary);
+            color: white;
+            padding: 0;
+            margin: 0;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
-        .progress-stats {
+        .play-pause-btn i {
+            width: 20px;
+            height: 20px;
+        }
+
+        .play-pause-btn.playing {
+            background: #fff;
+            color: var(--primary);
+        }
+
+        .range-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            position: relative;
+        }
+
+        .range-header {
             display: flex;
             justify-content: space-between;
+            align-items: center;
             font-size: 0.75rem;
             color: var(--text-dim);
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
         }
 
-        .error-msg {
-            color: #ff4d4d;
-            font-size: 0.85rem;
-            margin-top: 0.75rem;
+        .range-inputs {
+            display: flex;
+            gap: 0.25rem;
+            color: var(--primary);
+        }
+
+        .slider-wrapper {
+            position: relative;
+            height: 24px;
+            margin-top: 0.5rem;
+            /* The wrapper contains the range inputs which span full width */
+        }
+
+        /* Inner track is inset to align with where thumb centers can actually reach */
+        .slider-inner-track {
+            position: absolute;
+            top: 50%;
+            left: 8px;
+            /* Half of 16px thumb */
+            right: 8px;
+            /* Half of 16px thumb */
+            height: 8px;
+            transform: translateY(-50%);
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .silence-overlay {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .silence-overlay-start {
+            left: 0;
+            width: 0;
+        }
+
+        .silence-overlay-end {
+            right: 0;
+            width: 0;
+        }
+
+        .slider-range {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            background: var(--primary);
+            opacity: 0.7;
+            left: 0;
+            width: 100%;
+            z-index: 0;
+        }
+
+        .playback-pointer {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            width: 3px;
+            height: 14px;
+            background: #fff;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 10;
+            box-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
+            border-radius: 1px;
             display: none;
-            text-align: center;
+        }
+
+        .slider-input {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            pointer-events: none;
+            -webkit-appearance: none;
+            appearance: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .slider-input::-webkit-slider-runnable-track {
+            height: 100%;
+            background: transparent;
+        }
+
+        .slider-input::-webkit-slider-thumb {
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #fff;
+            border: 2px solid var(--primary);
+            cursor: ew-resize;
+            pointer-events: auto;
+            -webkit-appearance: none;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+            margin-top: 0;
+            position: relative;
+            z-index: 20;
+        }
+
+        .slider-input::-moz-range-track {
+            height: 100%;
+            background: transparent;
+        }
+
+        .slider-input::-moz-range-thumb {
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #fff;
+            border: 2px solid var(--primary);
+            cursor: ew-resize;
+            pointer-events: auto;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+        }
+
+        /* Integrated Options */
+        .options-panel {
+            display: none;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .filename-container {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding-right: 1rem;
+        }
+
+        .filename-container input {
+            background: transparent;
+            border: none;
+        }
+
+        .hash-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            cursor: pointer;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .hash-checkbox input {
+            display: none;
+        }
+
+        .hash-checkbox .square {
+            width: 16px;
+            height: 16px;
+            border: 1px solid var(--card-border);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .hash-checkbox input:checked+.square {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .hash-checkbox .square svg,
+        .mini-check svg {
+            width: 12px;
+            height: 12px;
+            color: white;
+            display: none;
+        }
+
+        .hash-checkbox input:checked+.square svg,
+        .mini-toggle input:checked+.mini-check svg {
+            display: block;
+        }
+
+        /* Ensure no tick when disabled/unchecked */
+        .hash-checkbox .square i,
+        .mini-check i {
+            display: none !important;
+        }
+
+        .processing-card {
+            background: rgba(255, 0, 80, 0.03);
+            border: 1px solid var(--primary-glow);
+            border-radius: 16px;
+            padding: 0.75rem 1.25rem;
+            /* Halved top/bottom padding */
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-title {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: var(--primary);
+        }
+
+        .original-toggle {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            cursor: pointer;
+        }
+
+        .toggle-switch {
+            width: 32px;
+            height: 18px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 9px;
+            position: relative;
+            transition: 0.3s;
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            left: 2px;
+            top: 2px;
+            width: 14px;
+            height: 14px;
+            background: #fff;
+            border-radius: 50%;
+            transition: 0.3s;
+        }
+
+        input:checked+.toggle-switch {
+            background: var(--primary);
+        }
+
+        input:checked+.toggle-switch::after {
+            left: 16px;
+        }
+
+        .audio-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+            transition: all 0.3s ease;
+        }
+
+        .grid-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+
+        .grid-item label {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            font-weight: 600;
+        }
+
+        .mini-toggle {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+
+        .mini-toggle input {
+            display: none;
+        }
+
+        .mini-check {
+            width: 16px;
+            height: 16px;
+            border: 1px solid var(--card-border);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .mini-toggle input:checked+.mini-check {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .mini-toggle i {
+            width: 10px;
+            color: white;
+            display: none;
+        }
+
+        .mini-toggle input:checked+.mini-check i {
+            display: block;
+        }
+
+        .styled-select-mini {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+            border-radius: 6px;
+            color: white;
+            padding: 0.3rem 0.6rem;
+            font-size: 0.75rem;
+            width: 100%;
+            outline: none;
+        }
+
+        /* Pipeline Progress */
+        .pipeline-progress {
+            display: none;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .pipeline-steps {
+            display: flex;
+            gap: 0.25rem;
+            align-items: center;
+        }
+
+        .pipeline-step {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            padding: 0.3rem 0.6rem;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid transparent;
+            transition: all 0.3s ease;
+            flex: 1;
+            justify-content: center;
+            white-space: nowrap;
+        }
+
+        .pipeline-step.active {
+            color: var(--primary);
+            border-color: rgba(255, 0, 80, 0.25);
+            background: rgba(255, 0, 80, 0.06);
+        }
+
+        .pipeline-step.done {
+            color: #00e676;
+            border-color: rgba(0, 230, 118, 0.2);
+            background: rgba(0, 230, 118, 0.05);
+        }
+
+        .pipeline-step .step-icon {
+            width: 14px;
+            height: 14px;
+            flex-shrink: 0;
+        }
+
+        .pipeline-step .step-icon.spin {
+            animation: spin 1s linear infinite;
+        }
+
+        .pipeline-connector {
+            color: rgba(255, 255, 255, 0.15);
+            font-size: 0.7rem;
+            flex-shrink: 0;
+        }
+
+        .pipeline-connector.done {
+            color: rgba(0, 230, 118, 0.4);
+        }
+
+        .pipeline-bar {
+            width: 100%;
+            height: 3px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .pipeline-fill {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), #ff6090);
+            transition: width 0.4s ease;
+            border-radius: 2px;
+        }
+
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .spin {
+            animation: spin 1s linear infinite;
         }
 
         /* Success animation */
@@ -255,22 +696,160 @@
             display: none;
             color: #00e676;
             text-align: center;
-            padding-top: 1rem;
+            padding-top: 0.5rem;
+        }
+
+        /* Toast Styles */
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: #1a1c23;
+            border: 1px solid var(--primary);
+            border-radius: 16px;
+            padding: 1rem 1.5rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 1000;
+            opacity: 0;
+            max-width: 90%;
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+
+        .toast-content {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .toast-icon {
+            color: var(--primary);
+            width: 24px;
+            height: 24px;
+        }
+
+        .toast-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .toast-path {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            font-family: monospace;
+            word-break: break-all;
+        }
+
+        /* Error toast variant */
+        .toast.error {
+            border-color: #ff4d4d;
+        }
+
+        .toast.error .toast-icon {
+            color: #ff4d4d;
+        }
+
+        .advanced-audio {
+            border-color: var(--primary-glow);
+            background: rgba(255, 0, 80, 0.03);
+        }
+
+        .group-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .audio-control-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 0.75rem 0;
+        }
+
+        .control-label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+        }
+
+        .styled-select {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            color: white;
+            padding: 0.4rem 0.8rem;
+            font-size: 0.85rem;
+            outline: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .styled-select:focus {
+            border-color: var(--primary);
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* PayPal Button Styles */
+        .paypal-donate-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            background: #ffc439;
+            color: #003087;
+            padding: 10px 24px;
+            border-radius: 100px;
+            font-weight: 700;
+            font-size: 14px;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(255, 196, 57, 0.2);
+            font-family: 'Inter', sans-serif;
+            border: none;
+            cursor: pointer;
+        }
+
+        .paypal-donate-btn:hover {
+            background: #f2ba36;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(255, 196, 57, 0.3);
+        }
+
+        .paypal-donate-btn:active {
+            transform: translateY(0);
+        }
+
+        .paypal-donate-btn svg {
+            width: 18px;
+            height: 18px;
         }
     </style>
 </head>
 
 <body>
     <div class="container">
-        <div class="card">
-            <h1>YT2MP3</h1>
-            <p class="subtitle">Download high-quality audio instantly</p>
+        <div class="card" autocomplete="off">
+            <h1>Youtify</h1>
+            <p class="subtitle">YouTube to MP3</p>
 
             <div class="input-group">
                 <input type="text" id="urlInput" placeholder="Paste YouTube URL here...">
                 <i data-lucide="link" class="input-icon"></i>
-                <div id="errorMsg" class="error-msg">Please enter a valid YouTube URL</div>
             </div>
+
+            <button id="searchBtn">
+                <i data-lucide="search"></i>
+                <span>Search</span>
+            </button>
 
             <div id="preview" class="preview">
                 <div class="preview-card">
@@ -281,149 +860,1343 @@
                     </div>
                 </div>
 
-                <div id="progress" class="progress-container">
-                    <div class="progress-bar-bg">
-                        <div id="progressBar" class="progress-bar-fill"></div>
+                <div class="media-player">
+                    <div class="playback-controls">
+                        <button id="previewBtn" class="play-pause-btn">
+                            <i data-lucide="play"></i>
+                        </button>
+                        <div class="range-container">
+                            <div class="range-header">
+                                <span id="currentTimeDisplay">00:00</span>
+                                <div class="range-inputs">
+                                    <span id="startDisplay" contenteditable="true"
+                                        style="border-bottom: 1px dashed var(--primary); cursor: pointer;">00:00</span>
+                                    <span>-</span>
+                                    <span id="endDisplay" contenteditable="true"
+                                        style="border-bottom: 1px dashed var(--primary); cursor: pointer;">00:00</span>
+                                </div>
+                            </div>
+                            <div class="slider-wrapper">
+                                <div class="slider-inner-track" id="sliderTrack">
+                                    <div class="silence-overlay silence-overlay-start" id="silenceStartOverlay"></div>
+                                    <div class="silence-overlay silence-overlay-end" id="silenceEndOverlay"></div>
+                                    <div id="sliderRange" class="slider-range"></div>
+                                    <div id="playbackPointer" class="playback-pointer"></div>
+                                </div>
+                                <input type="range" id="startSlider" class="slider-input" min="0" max="100" value="0">
+                                <input type="range" id="endSlider" class="slider-input" min="0" max="100" value="100">
+                            </div>
+                        </div>
                     </div>
-                    <div class="progress-stats">
-                        <span id="status">Preparing...</span>
-                        <span id="percent">0%</span>
-                    </div>
+                    <audio id="previewAudio" style="display: none;"></audio>
                 </div>
             </div>
 
-            <button id="downloadBtn" disabled>
-                <i data-lucide="download"></i>
-                <span>Download MP3</span>
-            </button>
+            <div id="optionsPanel" class="options-panel">
+                <div class="processing-card">
+                    <div class="card-header">
+                        <div class="card-title">
+                            <i data-lucide="sparkles" style="width:14px"></i>
+                            <span>Audio Effects</span>
+                        </div>
+                        <label class="original-toggle">
+                            <input type="checkbox" id="originalToggle" style="display:none">
+                            <div class="toggle-switch"></div>
+                            <span>Original</span>
+                        </label>
+                    </div>
+
+                    <div id="advancedControls" class="audio-grid">
+                        <div class="grid-item">
+                            <label>Loudness Normalization</label>
+                            <div style="display:flex; gap:0.4rem; align-items:center;">
+                                <label class="mini-toggle">
+                                    <input type="checkbox" id="normalizeToggle" checked>
+                                    <div class="mini-check"><i data-lucide="check"></i></div>
+                                </label>
+                                <select id="normalizeISelect" class="styled-select-mini"
+                                    style="width:auto; padding:0.2rem 0.4rem;">
+                                    <option value="-12">-12 LUFS (Loud)</option>
+                                    <option value="-16" selected>-16 LUFS (Std)</option>
+                                    <option value="-23">-23 LUFS (Quiet)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="grid-item">
+                            <label>EQ Preset</label>
+                            <div style="display:flex; gap:0.4rem; align-items:center;">
+                                <label class="mini-toggle">
+                                    <input type="checkbox" id="eqToggle">
+                                    <div class="mini-check"><i data-lucide="check"></i></div>
+                                </label>
+                                <select id="eqPresetSelect" class="styled-select-mini">
+                                    <option value="Classical">Classical</option>
+                                    <option value="Electronic">Electronic</option>
+                                    <option value="Rock">Rock</option>
+                                    <option value="Pop" selected>Pop</option>
+                                    <option value="Jazz">Jazz</option>
+                                    <option value="Acoustic">Acoustic</option>
+                                    <option value="Bass Boost">Bass Boost</option>
+                                    <option value="Treble Boost">Treble Boost</option>
+                                    <option value="Podcast">Podcast</option>
+                                    <option value="Lo-Fi">Lo-Fi</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="grid-item">
+                            <label>Compression</label>
+                            <div style="display:flex; gap:0.4rem; align-items:center;">
+                                <label class="mini-toggle">
+                                    <input type="checkbox" id="mbcToggle">
+                                    <div class="mini-check"><i data-lucide="check"></i></div>
+                                </label>
+                                <select id="mbcPresetSelect" class="styled-select-mini"
+                                    style="width:auto; padding:0.2rem 0.4rem;">
+                                    <option value="Smooth">Smooth</option>
+                                    <option value="Punchy" selected>Punchy</option>
+                                    <option value="Broadcast">Broadcast</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="grid-item">
+                            <label>Stereo Widening</label>
+                            <div style="display:flex; gap:0.4rem; align-items:center;">
+                                <label class="mini-toggle">
+                                    <input type="checkbox" id="enhanceToggle">
+                                    <div class="mini-check"><i data-lucide="check"></i></div>
+                                </label>
+                                <select id="enhanceIntensitySelect" class="styled-select-mini"
+                                    style="width:auto; padding:0.2rem 0.4rem;">
+                                    <option value="1.0">Low</option>
+                                    <option value="1.5" selected>Mid</option>
+                                    <option value="2.0">High</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="grid-item">
+                            <label>Trim Silence</label>
+                            <div style="display:flex; gap:0.4rem; align-items:center;">
+                                <label class="mini-toggle">
+                                    <input type="checkbox" id="trimSilenceToggle" checked>
+                                    <div class="mini-check"><i data-lucide="check"></i></div>
+                                </label>
+                                <select id="silenceThreshSelect" class="styled-select-mini"
+                                    style="width:auto; padding:0.2rem 0.4rem;">
+                                    <option value="-20">-20 dB</option>
+                                    <option value="-21">-21 dB</option>
+                                    <option value="-22">-22 dB</option>
+                                    <option value="-23">-23 dB</option>
+                                    <option value="-24">-24 dB</option>
+                                    <option value="-25">-25 dB</option>
+                                    <option value="-30">-30 dB</option>
+                                    <option value="-40" selected>-40 dB</option>
+                                    <option value="-50">-50 dB</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="processing-card" style="margin-top: 0.25rem;">
+                    <div class="card-header">
+                        <div class="card-title">
+                            <i data-lucide="tags" style="width:14px"></i>
+                            <span>Metadata & File</span>
+                        </div>
+                    </div>
+
+                    <!-- Thumbnail Section -->
+                    <div style="display:flex; gap:1rem; align-items:center;">
+                        <div style="position:relative; flex-shrink:0;">
+                            <img id="metaThumb" src="" alt="Cover"
+                                style="width:80px; height:80px; border-radius:12px; object-fit:cover; border:1px solid var(--card-border);">
+                            <input type="file" id="thumbUpload" accept="image/*" style="display:none;">
+                        </div>
+                        <div style="display:flex; flex-direction:column; gap:0.4rem; flex:1; min-width:0;">
+                            <button id="uploadThumbBtn" type="button"
+                                style="width:auto; padding:0.4rem 0.8rem; font-size:0.75rem; border-radius:8px; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin:0;">
+                                <i data-lucide="upload" style="width:12px; height:12px;"></i>
+                                <span>Upload Cover</span>
+                            </button>
+                            <button id="resetThumbBtn" type="button"
+                                style="width:auto; padding:0.4rem 0.8rem; font-size:0.75rem; border-radius:8px; background:transparent; border:1px solid var(--card-border); margin:0; display:none;">
+                                <i data-lucide="rotate-ccw" style="width:12px; height:12px;"></i>
+                                <span>Reset</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Standard Metadata Fields -->
+                    <div class="audio-grid">
+                        <div class="grid-item" style="grid-column: 1 / -1;">
+                            <label>Title</label>
+                            <input type="text" id="metaTitle" placeholder="Track title..."
+                                style="padding:0.4rem 0.6rem; font-size:0.8rem; border-radius:8px;">
+                        </div>
+                        <div class="grid-item" style="grid-column: 1 / -1; position:relative;">
+                            <label>Artist</label>
+                            <div id="artistContainer"
+                                style="display:flex; flex-wrap:wrap; gap:0.3rem; padding:0.35rem 0.5rem; min-height:36px; border-radius:8px; background:rgba(255,255,255,0.03); border:1px solid var(--card-border); align-items:center; cursor:text;"
+                                onclick="document.getElementById('artistInput').focus()">
+                                <input type="text" id="artistInput" placeholder="Artist… (Enter to add)"
+                                    autocomplete="off"
+                                    style="flex:1; min-width:60px; padding:0.15rem 0; font-size:0.75rem; border:none; background:transparent; color:#fff; outline:none;">
+                            </div>
+                            <input type="hidden" id="metaArtist">
+                        </div>
+                        <div class="grid-item" style="grid-column: 1 / -1; position:relative;">
+                            <label>Genre</label>
+                            <div id="genreContainer"
+                                style="display:flex; flex-wrap:wrap; gap:0.3rem; padding:0.35rem 0.5rem; min-height:36px; border-radius:8px; background:rgba(255,255,255,0.03); border:1px solid var(--card-border); align-items:center; cursor:text;"
+                                onclick="document.getElementById('genreInput').focus()">
+                                <input type="text" id="genreInput" placeholder="Type genre..." autocomplete="off"
+                                    style="flex:1; min-width:80px; padding:0.15rem 0; font-size:0.75rem; border:none; background:transparent; color:#fff; outline:none;">
+                            </div>
+                            <div id="genreDropdown"
+                                style="display:none; position:absolute; left:0; right:0; top:calc(100% + 2px); z-index:100; max-height:180px; overflow-y:auto; background:rgba(15,15,25,0.95); border:1px solid var(--card-border); border-radius:10px; backdrop-filter:blur(16px); box-shadow:0 8px 24px rgba(0,0,0,0.4);">
+                            </div>
+                            <input type="hidden" id="metaGenre">
+                        </div>
+                        <div class="grid-item">
+                            <label>Year</label>
+                            <input type="text" id="metaYear" placeholder="Year..."
+                                style="padding:0.4rem 0.6rem; font-size:0.8rem; border-radius:8px;">
+                        </div>
+                        <div class="grid-item">
+                            <label>Album</label>
+                            <input type="text" id="metaAlbum" placeholder="Album name..."
+                                style="padding:0.4rem 0.6rem; font-size:0.8rem; border-radius:8px;">
+                        </div>
+                    </div>
+
+
+                    <!-- Custom Tags -->
+                    <div>
+                        <div
+                            style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+                            <label style="font-size:0.7rem; color:var(--text-dim); font-weight:600;">Custom Tags</label>
+                            <button id="addTagBtn" type="button"
+                                style="width:auto; padding:0.25rem 0.6rem; font-size:0.7rem; border-radius:6px; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin:0;">
+                                <i data-lucide="plus" style="width:10px; height:10px;"></i>
+                                <span>Add</span>
+                            </button>
+                        </div>
+                        <div id="customTagsContainer" style="display:flex; flex-direction:column; gap:0.4rem;"></div>
+                    </div>
+
+                    <!-- Filename Preview -->
+                    <div style="margin-top:0.25rem;">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <label style="font-size:0.7rem; color:var(--text-dim); font-weight:600;">Filename</label>
+                            <div style="display:flex; align-items:center; gap:0.3rem;">
+                                <label style="font-size:0.65rem; color:var(--text-dim);">Tag separator</label>
+                                <input type="text" id="delimiterInput" value="|" maxlength="5"
+                                    style="width:32px; padding:0.2rem 0.3rem; font-size:0.75rem; text-align:center; border-radius:6px; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); color:#fff; font-family:monospace;">
+                            </div>
+                        </div>
+                        <div id="filenamePreview"
+                            style="padding:0.5rem 0.7rem; font-size:0.8rem; border-radius:8px; background:rgba(255,255,255,0.03); border:1px solid var(--card-border); color:rgba(255,255,255,0.7); word-break:break-all; font-family:monospace; margin-top:0.3rem;">
+                            Title.mp3
+                        </div>
+                    </div>
+
+                    <!-- Pipeline Progress -->
+                    <div id="pipelineProgress" class="pipeline-progress">
+                        <div class="pipeline-steps">
+                            <div id="stepCache" class="pipeline-step">
+                                <i data-lucide="download-cloud" class="step-icon" id="stepCacheIcon"></i>
+                                <span id="stepCacheLabel">Cache</span>
+                            </div>
+                            <span id="pipelineConnector" class="pipeline-connector">→</span>
+                            <div id="stepProcess" class="pipeline-step">
+                                <i data-lucide="cpu" class="step-icon" id="stepProcessIcon"></i>
+                                <span id="stepProcessLabel">Process</span>
+                            </div>
+                        </div>
+                        <div class="pipeline-bar">
+                            <div id="pipelineFill" class="pipeline-fill"></div>
+                        </div>
+                    </div>
+                </div>
+
+
+                <div style="display: flex; gap: 0.75rem;">
+                    <button id="downloadBtn" style="flex:2">
+                        <i data-lucide="download"></i>
+                        <span>Download</span>
+                    </button>
+                    <button id="uploadNextBtn"
+                        style="flex:1; background: rgba(255,255,255,0.05); border: 1px solid var(--card-border);">
+                        <i data-lucide="refresh-cw"></i>
+                        <span>New</span>
+                    </button>
+                </div>
+            </div>
 
             <div id="success" class="success-checkmark">
-                <i data-lucide="check-circle" style="width: 48px; height: 48px; margin: 0 auto 0.5rem;"></i>
-                <p>Download complete!</p>
+                <i data-lucide="check-circle" style="width: 32px; height: 32px; margin: 0 auto 0.5rem;"></i>
+                <p style="font-size:0.9rem">Saved successfully!</p>
             </div>
         </div>
-    </div>
 
-    <script>
-        lucide.createIcons();
+        <!-- Toast Container -->
+        <div id="toast" class="toast">
+            <div class="toast-content">
+                <i data-lucide="folder-check" class="toast-icon"></i>
+                <div class="toast-text">
+                    <p class="toast-title">File Saved</p>
+                    <p id="toastPath" class="toast-path">...</p>
+                </div>
+            </div>
+        </div>
 
-        const urlInput = document.getElementById('urlInput');
-        const downloadBtn = document.getElementById('downloadBtn');
-        const errorMsg = document.getElementById('errorMsg');
-        const preview = document.getElementById('preview');
-        const thumb = document.getElementById('thumb');
-        const title = document.getElementById('title');
-        const author = document.getElementById('author');
-        const progress = document.getElementById('progress');
-        const progressBar = document.getElementById('progressBar');
-        const status = document.getElementById('status');
-        const percent = document.getElementById('percent');
-        const success = document.getElementById('success');
+        <div id="errorToast" class="toast error">
+            <div class="toast-content">
+                <i data-lucide="alert-circle" class="toast-icon"></i>
+                <div class="toast-text">
+                    <p id="errorToastMsg" class="toast-title">...</p>
+                </div>
+            </div>
+        </div>
 
-        let session_id = null;
-        let pollingInterval = null;
+        <!-- Footer with Donate Button -->
+        <footer style="text-align: center; padding: 1.5rem 0; margin-top: 1rem; opacity: 0.9;">
+            <a href="https://www.paypal.com/donate/?hosted_button_id=5FJBP8PNCNY2A" target="_blank"
+                class="paypal-donate-btn" title="Support the project">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path
+                        d="M20.067 8.478c.492.2.822.449.95.733.127.284.116.634-.035 1.018-.466 1.181-1.841 3.518-4.126 7.01-.19.289-.25.467-.183.534.067.067.24.033.518-.1 1.077-.514 2.115-.992 3.111-1.436.425-.189.782-.162 1.071.08.288.242.427.561.417.958-.013.43-.19.83-.531 1.201-2.924 3.197-6.177 4.796-9.759 4.796-1.574 0-2.887-.314-3.94-.943C6.486 21.696 6 20.733 6 19.439c0-.495.127-1.139.38-1.933l1.833-5.741c.148-.463.097-.83-.151-1.101-.249-.271-.621-.406-1.116-.406H5.21c-.424 0-.74-.131-.948-.393-.208-.261-.264-.582-.17-.962.138-.567.42-1.072.844-1.517.424-.445.92-.767 1.487-.967C9.28 6.438 12.015 5.51 14.629 5.51c2.14 0 3.754.437 4.842 1.31 1.064.852 1.536 1.94 1.417 3.264-.047.534-.236 1.157-.567 1.868l-.13.279c-.114.24-.075.405.116.494.492.23.822.479.95.748.127.269.116.604-.035.988l-.203.513c-.114.289-.047.458.201.506.248.048.544-.049.887-.291.564-.396.969-.877 1.216-1.442.247-.565.312-1.166.196-1.804-.203-1.125-.873-2.022-2.01-2.691-.492-.29-.822-.539-.95-.748-.127-.209-.116-.514.035-.914.549-1.442 1.637-3.926 3.264-7.452.115-.24.238-.36.37-.36.132 0 .285.084.458.252l.279.279c.191.191.242.385.153.582-.266.587-.806 1.501-1.619 2.74l-.902 1.383c-.114.175-.102.327.037.455.139.128.329.176.57.145 1.44-.187 2.651-.017 3.633.51z" />
+                </svg>
+                Support Me
+            </a>
+        </footer>
 
-        urlInput.addEventListener('input', debounce(async (e) => {
-            const url = e.target.value.trim();
-            if (!url) {
-                resetUI();
-                return;
+        <script>
+            lucide.createIcons();
+
+            // --- State ---
+            let videoDuration = 0;
+            let currentVideoId = '';
+            let session_id = '';
+            let isDragging = false;
+            let playbackInterval = null;
+            let silenceInfo = { leading: 0, trailing: 0 };
+            let isStreaming = false; // Prevent interactions during streaming
+            let originalThumbnailUrl = ''; // Store YouTube thumbnail URL
+            let customThumbnailBase64 = null; // Store custom thumbnail as base64
+            let isCached = false; // Track if audio is cached
+            let cachePollTimer = null; // Timer for cache polling
+
+            // Reset all form elements to defaults on page load
+            function resetDefaults() {
+                // Checkboxes - all unchecked by default except specific ones
+                document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+                // Enable normalize and silence trim by default
+                const normalizeToggle = document.getElementById('normalizeToggle');
+                const trimSilenceToggle = document.getElementById('trimSilenceToggle');
+                if (normalizeToggle) normalizeToggle.checked = true;
+                if (trimSilenceToggle) trimSilenceToggle.checked = true;
+
+                // Reset selects to first/default option
+                document.querySelectorAll('select').forEach(sel => sel.selectedIndex = 0);
+                const normalizeISelect = document.getElementById('normalizeISelect');
+                if (normalizeISelect) normalizeISelect.value = '-16'; // Default to -16 LUFS
+                const silenceThreshSelect = document.getElementById('silenceThreshSelect');
+                if (silenceThreshSelect) silenceThreshSelect.value = '-40'; // Default to -40 dB
             }
+            resetDefaults();
 
-            try {
-                const response = await fetch(`/info?url=${encodeURIComponent(url)}`);
-                if (response.ok) {
-                    const data = await response.json();
-                    showPreview(data);
-                    errorMsg.style.display = 'none';
-                    downloadBtn.disabled = false;
-                } else {
-                    throw new Error();
-                }
-            } catch (err) {
-                resetUI();
-                if (url) errorMsg.style.display = 'block';
-            }
-        }, 500));
-
-        downloadBtn.addEventListener('click', async () => {
-            const url = urlInput.value.trim();
-            session_id = Math.random().toString(36).substring(7);
-
-            downloadBtn.disabled = true;
-            progress.style.display = 'block';
-            success.style.display = 'none';
-
-            // Start polling progress
-            startPolling();
-
-            // Trigger the download stream
-            // We use window.location to trigger browser download
-            const downloadUrl = `/stream?url=${encodeURIComponent(url)}&session_id=${session_id}`;
-            window.location.href = downloadUrl;
-        });
-
-        function showPreview(data) {
-            thumb.src = data.thumbnail;
-            title.textContent = data.title;
-            author.textContent = data.author;
-            preview.style.display = 'flex';
-        }
-
-        function resetUI() {
-            preview.style.display = 'none';
-            downloadBtn.disabled = true;
-            progress.style.display = 'none';
-            success.style.display = 'none';
-            if (pollingInterval) clearInterval(pollingInterval);
-        }
-
-        function startPolling() {
-            if (pollingInterval) clearInterval(pollingInterval);
-
-            pollingInterval = setInterval(async () => {
-                try {
-                    const response = await fetch(`/progress/${session_id}`);
-                    const data = await response.json();
-
-                    if (data.status === 'downloading' || data.status === 'processing') {
-                        const p = data.progress || 0;
-                        progressBar.style.width = p + '%';
-                        percent.textContent = Math.round(p) + '%';
-                        status.textContent = data.status === 'processing' ? 'Converting...' : `Downloading... (${data.speed || ''})`;
-                    }
-
-                    if (data.status === 'finished' || (data.status === 'not_started' && progressBar.style.width === '100%')) {
-                        // Sometimes the session is cleared before we get the 'finished' status
-                        completeUI();
-                    }
-                } catch (e) {
-                    console.error('Polling error', e);
-                }
-            }, 1000);
-        }
-
-        function completeUI() {
-            clearInterval(pollingInterval);
-            progressBar.style.width = '100%';
-            percent.textContent = '100%';
-            status.textContent = 'Finished!';
-            downloadBtn.disabled = false;
-            success.style.display = 'block';
-            // Hide progress after a while
-            setTimeout(() => {
-                progress.style.display = 'none';
-            }, 3000);
-        }
-
-        function debounce(func, wait) {
-            let timeout;
-            return function (...args) {
-                clearTimeout(timeout);
-                timeout = setTimeout(() => func.apply(this, args), wait);
+            // --- Elements ---
+            const els = {
+                urlInput: document.getElementById('urlInput'),
+                searchBtn: document.getElementById('searchBtn'),
+                preview: document.getElementById('preview'),
+                optionsPanel: document.getElementById('optionsPanel'),
+                thumb: document.getElementById('thumb'),
+                title: document.getElementById('title'),
+                author: document.getElementById('author'),
+                previewAudio: document.getElementById('previewAudio'),
+                previewBtn: document.getElementById('previewBtn'),
+                playbackPointer: document.getElementById('playbackPointer'),
+                currentTimeDisplay: document.getElementById('currentTimeDisplay'),
+                startDisplay: document.getElementById('startDisplay'),
+                endDisplay: document.getElementById('endDisplay'),
+                startSlider: document.getElementById('startSlider'),
+                endSlider: document.getElementById('endSlider'),
+                sliderRange: document.getElementById('sliderRange'),
+                sliderTrack: document.getElementById('sliderTrack'),
+                sliderWrapper: document.querySelector('.slider-wrapper'),
+                filenamePreview: document.getElementById('filenamePreview'),
+                originalToggle: document.getElementById('originalToggle'),
+                advancedControls: document.getElementById('advancedControls'),
+                normalizeToggle: document.getElementById('normalizeToggle'),
+                normalizeISelect: document.getElementById('normalizeISelect'),
+                eqToggle: document.getElementById('eqToggle'),
+                eqPresetSelect: document.getElementById('eqPresetSelect'),
+                mbcToggle: document.getElementById('mbcToggle'),
+                mbcPresetSelect: document.getElementById('mbcPresetSelect'),
+                enhanceToggle: document.getElementById('enhanceToggle'),
+                enhanceIntensitySelect: document.getElementById('enhanceIntensitySelect'),
+                trimSilenceToggle: document.getElementById('trimSilenceToggle'),
+                silenceThreshSelect: document.getElementById('silenceThreshSelect'),
+                downloadBtn: document.getElementById('downloadBtn'),
+                uploadNextBtn: document.getElementById('uploadNextBtn'),
+                success: document.getElementById('success'),
+                silenceStartOverlay: document.getElementById('silenceStartOverlay'),
+                silenceEndOverlay: document.getElementById('silenceEndOverlay'),
+                // Pipeline progress elements
+                pipelineProgress: document.getElementById('pipelineProgress'),
+                pipelineFill: document.getElementById('pipelineFill'),
+                stepCache: document.getElementById('stepCache'),
+                stepCacheIcon: document.getElementById('stepCacheIcon'),
+                stepCacheLabel: document.getElementById('stepCacheLabel'),
+                stepProcess: document.getElementById('stepProcess'),
+                stepProcessIcon: document.getElementById('stepProcessIcon'),
+                stepProcessLabel: document.getElementById('stepProcessLabel'),
+                pipelineConnector: document.getElementById('pipelineConnector'),
+                // Metadata elements
+                metaThumb: document.getElementById('metaThumb'),
+                thumbUpload: document.getElementById('thumbUpload'),
+                uploadThumbBtn: document.getElementById('uploadThumbBtn'),
+                resetThumbBtn: document.getElementById('resetThumbBtn'),
+                metaTitle: document.getElementById('metaTitle'),
+                metaArtist: document.getElementById('metaArtist'),
+                artistContainer: document.getElementById('artistContainer'),
+                artistInput: document.getElementById('artistInput'),
+                metaAlbum: document.getElementById('metaAlbum'),
+                metaGenre: document.getElementById('metaGenre'),
+                genreContainer: document.getElementById('genreContainer'),
+                genreInput: document.getElementById('genreInput'),
+                genreDropdown: document.getElementById('genreDropdown'),
+                metaYear: document.getElementById('metaYear'),
+                addTagBtn: document.getElementById('addTagBtn'),
+                customTagsContainer: document.getElementById('customTagsContainer'),
+                delimiterInput: document.getElementById('delimiterInput')
             };
-        }
-    </script>
+
+            // --- Pipeline Progress Helpers ---
+            function setPipelineStep(step, state) {
+                // step: 'cache' or 'process'
+                // state: 'idle', 'active', 'done'
+                const el = step === 'cache' ? els.stepCache : els.stepProcess;
+                const iconEl = step === 'cache' ? els.stepCacheIcon : els.stepProcessIcon;
+                const labelEl = step === 'cache' ? els.stepCacheLabel : els.stepProcessLabel;
+
+                el.classList.remove('active', 'done');
+                iconEl.classList.remove('spin');
+
+                if (state === 'active') {
+                    el.classList.add('active');
+                    iconEl.setAttribute('data-lucide', 'loader-2');
+                    iconEl.classList.add('spin');
+                    labelEl.textContent = step === 'cache' ? 'Caching…' : 'Processing…';
+                } else if (state === 'done') {
+                    el.classList.add('done');
+                    iconEl.setAttribute('data-lucide', 'check-circle-2');
+                    labelEl.textContent = step === 'cache' ? 'Cached' : 'Done';
+                } else {
+                    iconEl.setAttribute('data-lucide', step === 'cache' ? 'download-cloud' : 'cpu');
+                    labelEl.textContent = step === 'cache' ? 'Cache' : 'Process';
+                }
+                lucide.createIcons({ nodes: [iconEl] });
+            }
+
+            function showPipeline() {
+                els.pipelineProgress.style.display = 'flex';
+                els.pipelineFill.style.width = '0%';
+                setPipelineStep('cache', 'idle');
+                setPipelineStep('process', 'idle');
+                els.pipelineConnector.classList.remove('done');
+            }
+
+            function hidePipeline() {
+                els.pipelineProgress.style.display = 'none';
+            }
+
+            function startCachePoll(url) {
+                isCached = false;
+                if (cachePollTimer) clearInterval(cachePollTimer);
+                showPipeline();
+                setPipelineStep('cache', 'active');
+                els.pipelineFill.style.width = '15%';
+
+                cachePollTimer = setInterval(async () => {
+                    try {
+                        const res = await fetch(`/cache-status?url=${encodeURIComponent(url)}`);
+                        const data = await res.json();
+                        if (data.cached) {
+                            isCached = true;
+                            clearInterval(cachePollTimer);
+                            cachePollTimer = null;
+                            setPipelineStep('cache', 'done');
+                            els.pipelineConnector.classList.add('done');
+                            els.pipelineFill.style.width = '50%';
+                        }
+                    } catch (e) { /* silently retry */ }
+                }, 1500);
+            }
+
+            // --- Thumbnail Upload/Reset ---
+            els.uploadThumbBtn.addEventListener('click', () => els.thumbUpload.click());
+            els.thumbUpload.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    els.metaThumb.src = ev.target.result;
+                    // Store base64 (strip data URL prefix)
+                    customThumbnailBase64 = ev.target.result.split(',')[1];
+                    els.resetThumbBtn.style.display = 'flex';
+                };
+                reader.readAsDataURL(file);
+            });
+            els.resetThumbBtn.addEventListener('click', () => {
+                els.metaThumb.src = originalThumbnailUrl;
+                customThumbnailBase64 = null;
+                els.resetThumbBtn.style.display = 'none';
+                els.thumbUpload.value = '';
+            });
+
+            // --- Custom Tags ---
+            function addCustomTag(key = '', value = '') {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex; gap:0.4rem; align-items:center;';
+                row.innerHTML = `
+                    <input type="text" placeholder="Key" value="${key}" class="custom-tag-key"
+                        style="flex:1; padding:0.3rem 0.5rem; font-size:0.75rem; border-radius:6px; background:rgba(255,255,255,0.03); border:1px solid var(--card-border); color:#fff;">
+                    <input type="text" placeholder="Value" value="${value}" class="custom-tag-value"
+                        style="flex:2; padding:0.3rem 0.5rem; font-size:0.75rem; border-radius:6px; background:rgba(255,255,255,0.03); border:1px solid var(--card-border); color:#fff;">
+                    <button type="button" onclick="this.parentElement.remove()" 
+                        style="width:24px; height:24px; padding:0; margin:0; border-radius:6px; background:rgba(255,0,80,0.15); border:1px solid rgba(255,0,80,0.3); flex-shrink:0; display:flex; align-items:center; justify-content:center;">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                `;
+                els.customTagsContainer.appendChild(row);
+            }
+            els.addTagBtn.addEventListener('click', () => addCustomTag());
+
+            function getCustomTags() {
+                const tags = [];
+                els.customTagsContainer.querySelectorAll('div').forEach(row => {
+                    const key = row.querySelector('.custom-tag-key')?.value?.trim();
+                    const val = row.querySelector('.custom-tag-value')?.value?.trim();
+                    if (key && val) tags.push({ key, value: val });
+                });
+                return tags;
+            }
+
+            // --- Genre Multi-Select with Autocomplete ---
+            const GENRE_LIST = [
+                // Standard music genres
+                'Pop', 'Rock', 'Hip-Hop', 'R&B', 'Jazz', 'Blues', 'Country', 'Folk', 'Electronic', 'Dance',
+                'House', 'Techno', 'Trance', 'Dubstep', 'Reggae', 'Ska', 'Punk', 'Metal', 'Alternative',
+                'Indie', 'Soul', 'Funk', 'Disco', 'Gospel', 'Latin', 'Bossa Nova', 'Ambient', 'New Age',
+                'World', 'Acoustic', 'Lo-Fi', 'Trap', 'Drill', 'K-Pop', 'J-Pop', 'Synthwave', 'Chillout',
+                // Classical & Instrumental
+                'Classical', 'Violin', 'Piano', 'Flute', 'Cello', 'Guitar', 'Kalimba', 'Cover', 'Original', 'Anime',
+                'Orchestra', 'Concerto', 'Symphony', 'Sonata', 'Suite', 'Partita', 'Rondo',
+                'Theme and Variations', 'Fugue', 'Prelude', 'Etude', 'Nocturne', 'Waltz', 'Mazurka',
+                'Polonaise', 'Minuet', 'Scherzo', 'Toccata', 'Fantasia', 'Rhapsody', 'Overture',
+                'Sinfonia concertante', 'Mass', 'Opera', 'Oratorio', 'Cantata',
+                // Soundtrack & other
+                'Soundtrack', 'Film Score', 'Video Game', 'Cinematic', 'Instrumental', "Roma", "Medieval", "Renaissance", "Baroque", "Romantic", "Impressionist", "Modern", "Postmodern", "Contemporary"
+            ];
+            let selectedGenres = [];
+            let selectedArtists = [];
+
+            // --- Artist Multi-Tag Input ---
+            function renderArtistTags() {
+                els.artistContainer.querySelectorAll('.artist-tag').forEach(t => t.remove());
+                const input = els.artistInput;
+                selectedArtists.forEach(artist => {
+                    const tag = document.createElement('span');
+                    tag.className = 'artist-tag';
+                    tag.style.cssText = 'display:inline-flex; align-items:center; gap:0.2rem; padding:0.15rem 0.45rem; font-size:0.7rem; border-radius:6px; background:rgba(100,140,255,0.15); border:1px solid rgba(100,140,255,0.3); color:rgba(140,170,255,1); white-space:nowrap; cursor:default;';
+                    tag.innerHTML = `${artist}<span onclick="removeArtist('${artist.replace(/'/g, "\\\'")}')" style="cursor:pointer; margin-left:0.15rem; opacity:0.7; font-size:0.85em;">&times;</span>`;
+                    els.artistContainer.insertBefore(tag, input);
+                });
+                els.metaArtist.value = selectedArtists.join(els.delimiterInput.value || '|');
+                updateFilenamePreview();
+            }
+
+            function addArtist(name) {
+                name = name.trim();
+                if (!name || selectedArtists.includes(name)) return;
+                selectedArtists.push(name);
+                renderArtistTags();
+                els.artistInput.value = '';
+            }
+
+            window.removeArtist = function (name) {
+                selectedArtists = selectedArtists.filter(a => a !== name);
+                renderArtistTags();
+            };
+
+            els.artistInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const val = els.artistInput.value.trim();
+                    if (val) addArtist(val);
+                } else if (e.key === 'Backspace' && !els.artistInput.value && selectedArtists.length > 0) {
+                    selectedArtists.pop();
+                    renderArtistTags();
+                }
+            });
+            // Auto-add pending text when clicking away
+            els.artistInput.addEventListener('blur', () => {
+                const val = els.artistInput.value.trim();
+                if (val) addArtist(val);
+            });
+
+            function renderGenreTags() {
+                // Remove existing tags (but keep the input)
+                els.genreContainer.querySelectorAll('.genre-tag').forEach(t => t.remove());
+                const input = els.genreInput;
+                selectedGenres.forEach(genre => {
+                    const tag = document.createElement('span');
+                    tag.className = 'genre-tag';
+                    tag.style.cssText = 'display:inline-flex; align-items:center; gap:0.2rem; padding:0.15rem 0.45rem; font-size:0.7rem; border-radius:6px; background:rgba(255,0,80,0.15); border:1px solid rgba(255,0,80,0.3); color:var(--primary); white-space:nowrap; cursor:default;';
+                    tag.innerHTML = `${genre}<span onclick="removeGenre('${genre.replace(/'/g, "\\'")}')"
+                        style="cursor:pointer; margin-left:0.15rem; opacity:0.7; font-size:0.85em;">&times;</span>`;
+                    els.genreContainer.insertBefore(tag, input);
+                });
+                // Update hidden field with chosen delimiter
+                els.metaGenre.value = selectedGenres.join(els.delimiterInput.value || '|');
+                updateFilenamePreview();
+            }
+
+            function toTitleCase(str) {
+                return str.replace(/\w\S*/g, function (txt) {
+                    return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
+                });
+            }
+
+            function addGenre(genre) {
+                genre = genre.trim();
+                // 1. Capitalize first letter of each word
+                if (genre) genre = toTitleCase(genre);
+
+                if (!genre || selectedGenres.includes(genre)) return;
+                selectedGenres.push(genre);
+                renderGenreTags();
+                els.genreInput.value = '';
+                // Re-show dropdown since focus is still on the input
+                setTimeout(() => showGenreDropdown(''), 50);
+            }
+
+            window.removeGenre = function (genre) {
+                selectedGenres = selectedGenres.filter(g => g !== genre);
+                renderGenreTags();
+            };
+
+            let currentGenreFocus = -1;
+
+            function showGenreDropdown(filter = '') {
+                currentGenreFocus = -1; // Reset focus
+                const dd = els.genreDropdown;
+                dd.innerHTML = '';
+                const lf = filter.toLowerCase();
+                const matches = GENRE_LIST.filter(g =>
+                    !selectedGenres.includes(g) && g.toLowerCase().includes(lf)
+                ).slice(0, 15);
+
+                if (matches.length === 0 && filter.length === 0) { dd.style.display = 'none'; return; }
+
+                matches.forEach((genre, i) => {
+                    const item = document.createElement('div');
+                    item.textContent = genre;
+                    item.className = 'genre-item'; // Class for easy selection
+                    item.style.cssText = `padding:0.45rem 0.75rem; font-size:0.78rem; cursor:pointer; color:rgba(255,255,255,0.85); transition:all 0.15s ease; border-bottom:1px solid rgba(255,255,255,0.04); letter-spacing:0.01em;`;
+                    if (i === 0) item.style.borderRadius = '9px 9px 0 0';
+                    item.onmouseenter = () => {
+                        // Remove active from others
+                        Array.from(dd.children).forEach(c => {
+                            c.style.background = 'transparent';
+                            c.style.color = 'rgba(255,255,255,0.85)';
+                            c.classList.remove('active');
+                        });
+                        item.classList.add('active');
+                        item.style.background = 'rgba(255,255,255,0.08)';
+                        item.style.color = '#fff';
+                    };
+                    item.onmouseleave = () => {
+                        item.classList.remove('active');
+                        item.style.background = 'transparent';
+                        item.style.color = 'rgba(255,255,255,0.85)';
+                    };
+                    item.onmousedown = (e) => { e.preventDefault(); addGenre(genre); };
+                    dd.appendChild(item);
+                });
+
+                // If typed text doesn't exactly match any genre, show "Add custom" option
+                if (filter && !GENRE_LIST.some(g => g.toLowerCase() === lf) && !selectedGenres.some(g => g.toLowerCase() === lf)) {
+                    const custom = document.createElement('div');
+                    custom.className = 'genre-item';
+                    custom.textContent = filter; // Use textContent for consistency in navigation
+                    custom.innerHTML = `<span style="opacity:0.5">+</span> Add "<strong>${filter}</strong>"`;
+                    custom.dataset.value = filter; // Store value
+                    custom.style.cssText = 'padding:0.45rem 0.75rem; font-size:0.78rem; cursor:pointer; color:var(--primary); transition:all 0.15s ease; border-top:1px solid rgba(255,255,255,0.06); border-radius:0 0 9px 9px;';
+                    custom.onmouseenter = () => custom.style.background = 'rgba(255,0,80,0.08)';
+                    custom.onmouseleave = () => custom.style.background = 'transparent';
+                    custom.onmousedown = (e) => { e.preventDefault(); addGenre(filter); };
+                    dd.appendChild(custom);
+                }
+
+                // Round last item if no custom option
+                if (dd.lastChild && !filter) dd.lastChild.style.borderRadius = '0 0 9px 9px';
+
+                dd.style.display = matches.length > 0 || filter ? 'block' : 'none';
+            }
+
+            function setActive(items) {
+                if (!items || items.length === 0) return;
+
+                // Remove active class/style from all
+                Array.from(items).forEach(item => {
+                    item.classList.remove('active');
+                    item.style.background = 'transparent';
+                    item.style.color = 'rgba(255,255,255,0.85)';
+                    // Restore custom item color if needed, simplified for focus
+                    if (item.innerHTML.includes('Add "')) item.style.color = 'var(--primary)';
+                });
+
+                if (currentGenreFocus >= items.length) currentGenreFocus = 0;
+                if (currentGenreFocus < 0) currentGenreFocus = items.length - 1;
+
+                const target = items[currentGenreFocus];
+                target.classList.add('active');
+
+                // Styling for active state
+                if (target.innerHTML.includes('Add "')) {
+                    target.style.background = 'rgba(255,0,80,0.08)';
+                } else {
+                    target.style.background = 'rgba(255,255,255,0.08)';
+                    target.style.color = '#fff';
+                }
+
+                target.scrollIntoView({ block: 'nearest' });
+
+                // Update input value
+                const val = target.dataset.value || target.textContent;
+                els.genreInput.value = val;
+            }
+
+            function hideGenreDropdown() {
+                els.genreDropdown.style.display = 'none';
+                currentGenreFocus = -1;
+            }
+
+            els.genreInput.addEventListener('input', () => showGenreDropdown(els.genreInput.value));
+            els.genreInput.addEventListener('focus', () => showGenreDropdown(els.genreInput.value));
+            els.genreInput.addEventListener('blur', () => setTimeout(hideGenreDropdown, 150));
+            els.genreInput.addEventListener('keydown', (e) => {
+                const dd = els.genreDropdown;
+                const items = dd.getElementsByClassName('genre-item');
+
+                if (e.key === 'ArrowDown') {
+                    currentGenreFocus++;
+                    setActive(items);
+                    e.preventDefault(); // Prevent cursor moving
+                    if (dd.style.display === 'none') showGenreDropdown(els.genreInput.value);
+                } else if (e.key === 'ArrowUp') {
+                    currentGenreFocus--;
+                    setActive(items);
+                    e.preventDefault();
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (currentGenreFocus > -1 && items[currentGenreFocus]) {
+                        // Select the active item
+                        const val = items[currentGenreFocus].dataset.value || items[currentGenreFocus].textContent;
+                        addGenre(val);
+                    } else {
+                        // Standard enter behavior
+                        const val = els.genreInput.value.trim();
+                        if (val) addGenre(val);
+                    }
+                } else if (e.key === 'Backspace' && !els.genreInput.value && selectedGenres.length > 0) {
+                    selectedGenres.pop();
+                    renderGenreTags();
+                }
+            });
+
+            // --- Range Slider Logic ---
+            function initRangeSlider(duration) {
+                videoDuration = duration;
+                els.startSlider.max = duration;
+                els.endSlider.max = duration;
+                els.startSlider.value = 0;
+                els.endSlider.value = duration;
+                updateRangeUI();
+            }
+
+            function updateRangeUI() {
+                const MIN_DURATION = 10; // Minimum 10 seconds
+                let start = parseFloat(els.startSlider.value);
+                let end = parseFloat(els.endSlider.value);
+
+                // 1. Constrain to silence boundaries if enabled
+                if (els.trimSilenceToggle.checked) {
+                    const minAllowed = silenceInfo.leading || 0;
+                    const maxAllowed = videoDuration - (silenceInfo.trailing || 0);
+
+                    if (start < minAllowed) {
+                        start = minAllowed;
+                        els.startSlider.value = start;
+                    }
+                    if (end > maxAllowed) {
+                        end = maxAllowed;
+                        els.endSlider.value = end;
+                    }
+                }
+
+                // 2. Enforce minimum duration of 10 seconds (respecting boundaries)
+                if (end - start < MIN_DURATION) {
+                    const minAllowed = els.trimSilenceToggle.checked ? (silenceInfo.leading || 0) : 0;
+                    const maxAllowed = els.trimSilenceToggle.checked ? (videoDuration - (silenceInfo.trailing || 0)) : videoDuration;
+
+                    if (start + MIN_DURATION <= maxAllowed) {
+                        end = start + MIN_DURATION;
+                        els.endSlider.value = end;
+                    } else {
+                        start = Math.max(minAllowed, end - MIN_DURATION);
+                        els.startSlider.value = start;
+                    }
+                }
+
+                // Simple percentage positioning - inner track is already inset to match thumb centers
+                const startPct = (start / videoDuration) * 100;
+                const endPct = (end / videoDuration) * 100;
+                els.sliderRange.style.left = startPct + '%';
+                els.sliderRange.style.width = (endPct - startPct) + '%';
+                els.startDisplay.textContent = formatTime(start);
+                els.endDisplay.textContent = formatTime(end);
+                stopPlayback(); // Reset if range changes
+            }
+
+            function formatTime(seconds) {
+                if (isNaN(seconds)) return "00:00";
+                const h = Math.floor(seconds / 3600);
+                const m = Math.floor((seconds % 3600) / 60);
+                const s = Math.floor(seconds % 60);
+                if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+                return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+            }
+
+            els.startSlider.addEventListener('input', updateRangeUI);
+            els.endSlider.addEventListener('input', updateRangeUI);
+
+            // Click-to-seek on slider track (for playback position during preview)
+            els.sliderWrapper.addEventListener('click', (e) => {
+                // Ignore if clicking on the slider thumbs themselves
+                if (e.target === els.startSlider || e.target === els.endSlider) return;
+
+                // Calculate click position as percentage
+                const rect = els.sliderWrapper.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const percentage = Math.max(0, Math.min(1, clickX / rect.width));
+                const seekTime = percentage * videoDuration;
+
+                // Get current selected range
+                const start = parseFloat(els.startSlider.value);
+                const end = parseFloat(els.endSlider.value);
+
+                // If audio is playing and click is within selected range, seek to that position
+                if (!els.previewAudio.paused && els.previewAudio.src) {
+                    // Calculate relative position within the clip
+                    if (seekTime >= start && seekTime <= end) {
+                        const clipPosition = seekTime - start;
+                        els.previewAudio.currentTime = clipPosition;
+                    }
+                }
+            });
+
+            // Manual time editing
+            [els.startDisplay, els.endDisplay].forEach((el, idx) => {
+                el.addEventListener('blur', () => {
+                    const parts = el.textContent.split(':').map(p => parseInt(p));
+                    let secs = 0;
+                    if (parts.length === 3) secs = parts[0] * 3600 + parts[1] * 60 + parts[2];
+                    else if (parts.length === 2) secs = parts[0] * 60 + parts[1];
+                    else secs = parts[0];
+
+                    if (isNaN(secs) || secs < 0) secs = 0;
+                    if (secs > videoDuration) secs = videoDuration;
+
+                    if (idx === 0) els.startSlider.value = secs;
+                    else els.endSlider.value = secs;
+                    updateRangeUI();
+                    updateSilenceVisualization();
+                });
+                el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } });
+            });
+
+            async function updateSilenceVisualization() {
+                if (!els.trimSilenceToggle.checked || !els.urlInput.value) {
+                    silenceInfo = { leading: 0, trailing: 0 };
+                    els.silenceStartOverlay.style.width = '0';
+                    els.silenceEndOverlay.style.width = '0';
+                    updateRangeUI();
+                    return;
+                }
+
+                try {
+                    const res = await fetch(`/silence-info?url=${encodeURIComponent(els.urlInput.value)}&silence_thresh=${els.silenceThreshSelect.value}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        silenceInfo = { leading: data.leading_silence, trailing: data.trailing_silence };
+
+                        const startPct = (silenceInfo.leading / videoDuration) * 100;
+                        const endPct = (silenceInfo.trailing / videoDuration) * 100;
+
+                        els.silenceStartOverlay.style.width = startPct + '%';
+                        els.silenceEndOverlay.style.width = endPct + '%';
+
+                        // Snap slider thumbs to silence boundaries
+                        const newStart = silenceInfo.leading;
+                        const newEnd = videoDuration - silenceInfo.trailing;
+
+                        // Only snap if it results in valid range (min 10 seconds)
+                        if (newEnd - newStart >= 10) {
+                            els.startSlider.value = newStart;
+                            els.endSlider.value = newEnd;
+                        }
+                    }
+                    updateRangeUI();
+                } catch (e) {
+                    console.error("Silence info fetch failed", e);
+                    updateRangeUI();
+                }
+            }
+
+            els.trimSilenceToggle.addEventListener('change', updateSilenceVisualization);
+            els.silenceThreshSelect.addEventListener('change', updateSilenceVisualization);
+
+            // --- Search Flow ---
+            els.searchBtn.addEventListener('click', async () => {
+                const url = els.urlInput.value.trim();
+                if (!url) { showError("Please enter a YouTube URL"); return; }
+
+                setLoading(els.searchBtn, true);
+
+                try {
+                    const res = await fetch(`/search?url=${encodeURIComponent(url)}`);
+                    if (!res.ok) {
+                        let errText = await res.text();
+                        try { errText = JSON.parse(errText).detail || errText; } catch (e) { }
+                        throw new Error(errText);
+                    }
+                    const data = await res.json();
+
+                    currentVideoId = data.video_id; // Fixed: was data.id
+                    els.thumb.src = data.thumbnail;
+                    els.title.textContent = data.title;
+                    els.author.textContent = data.author;
+
+                    // Pre-populate metadata fields
+                    originalThumbnailUrl = data.thumbnail;
+                    els.metaThumb.src = data.thumbnail;
+                    els.metaTitle.value = data.title || '';
+                    selectedArtists = data.author ? [data.author] : [];
+                    renderArtistTags();
+                    els.metaAlbum.value = '';
+                    els.metaGenre.value = '';
+                    selectedGenres = [];
+                    renderGenreTags();
+                    customThumbnailBase64 = null;
+                    els.resetThumbBtn.style.display = 'none';
+                    // Reset custom tags and add default Composer tag
+                    els.customTagsContainer.innerHTML = '';
+                    addCustomTag('Composer', '');
+
+                    // Pre-populate Year from upload_date (YYYYMMDD -> YYYY)
+                    if (data.upload_date && data.upload_date.length >= 4) {
+                        els.metaYear.value = data.upload_date.substring(0, 4);
+                    } else {
+                        els.metaYear.value = '';
+                    }
+
+                    els.preview.style.display = 'flex';
+                    els.optionsPanel.style.display = 'flex';
+                    els.searchBtn.style.display = 'none';
+
+                    initRangeSlider(data.duration);
+                    updateFilenamePreview();
+                    updateSilenceVisualization();
+
+                    // Start cache polling to show caching progress
+                    startCachePoll(url);
+
+                    if (!data.can_preview) {
+                        els.previewBtn.disabled = true;
+                        els.previewBtn.title = data.limit_reason;
+                    }
+                } catch (err) {
+                    showError(err.message);
+                } finally {
+                    setLoading(els.searchBtn, false);
+                }
+            });
+
+            // --- Filename Preview (auto-generated from metadata) ---
+            function updateFilenamePreview() {
+                const title = els.metaTitle.value.trim() || 'Title';
+                const artist = selectedArtists.length > 0 ? selectedArtists.join(', ') : '';
+                const album = els.metaAlbum.value.trim();
+                const composer = getCustomTags().find(t => t.key.toLowerCase() === 'composer')?.value || '';
+
+                let parts = [title];
+                if (album) parts[0] = `${title} (${album})`;
+                if (artist || composer) {
+                    let right = artist || '';
+                    if (composer) right = right ? `${right} (${composer})` : composer;
+                    parts.push(right);
+                }
+                els.filenamePreview.textContent = parts.join(' - ') + '.mp3';
+            }
+            // Update filename preview on any metadata field change
+            ['metaTitle', 'metaAlbum'].forEach(id => {
+                els[id].addEventListener('input', updateFilenamePreview);
+            });
+            // Also update filename when custom tags change (e.g. Composer)
+            els.customTagsContainer.addEventListener('input', updateFilenamePreview);
+
+            // Re-render tags when delimiter changes
+            els.delimiterInput.addEventListener('input', () => {
+                renderArtistTags();
+                renderGenreTags();
+            });
+
+            els.originalToggle.addEventListener('change', () => {
+                const isOriginal = els.originalToggle.checked;
+                els.advancedControls.style.opacity = isOriginal ? '0.3' : '1';
+                els.advancedControls.style.pointerEvents = isOriginal ? 'none' : 'auto';
+
+                // When enabling Original, clear all effect toggles
+                if (isOriginal) {
+                    els.normalizeToggle.checked = false;
+                    els.eqToggle.checked = false;
+                    els.mbcToggle.checked = false;
+                    els.enhanceToggle.checked = false;
+                    els.trimSilenceToggle.checked = false;
+                }
+                stopPlayback();
+            });
+
+            // Effect changes reset playback
+            [els.normalizeToggle, els.normalizeISelect, els.eqToggle, els.eqPresetSelect, els.mbcToggle, els.mbcPresetSelect, els.enhanceToggle, els.enhanceIntensitySelect, els.trimSilenceToggle, els.silenceThreshSelect].forEach(el => {
+                if (el) el.addEventListener('change', stopPlayback);
+            });
+
+            // Effect changes for download
+            els.downloadBtn.addEventListener('click', () => {
+                // Ensure latest effects are read
+            });
+
+            // --- Audio Preview ---
+            let previewAbort = null;
+
+            els.previewBtn.addEventListener('click', () => {
+                // If currently loading/streaming, ignore clicks
+                if (isStreaming) return;
+
+                if (els.previewAudio.paused && els.previewAudio.src && !els.previewBtn.dataset.loading) {
+                    els.previewAudio.play();
+                    return;
+                }
+                if (!els.previewAudio.paused) {
+                    els.previewAudio.pause();
+                    return;
+                }
+
+                // New Start - set streaming flag
+                isStreaming = true;
+
+                // CRITICAL: Stop any existing playback to prevent audio duplication
+                els.previewAudio.pause();
+                els.previewAudio.removeAttribute('src');
+                els.previewAudio.load();
+
+                const params = new URLSearchParams({
+                    url: els.urlInput.value.trim(),
+                    start_time: els.startSlider.value,
+                    end_time: els.endSlider.value,
+                    eq_preset: els.eqToggle && els.eqToggle.checked ? els.eqPresetSelect.value : '',
+                    mbc_preset: els.mbcToggle && els.mbcToggle.checked ? els.mbcPresetSelect.value : '',
+                    enhance: els.enhanceToggle.checked,
+                    enhance_intensity: els.enhanceIntensitySelect.value,
+                    normalize: els.normalizeToggle.checked,
+                    normalize_i: els.normalizeISelect.value,
+                    original: els.originalToggle.checked,
+                    trim_silence: els.trimSilenceToggle.checked,
+                    silence_thresh: els.silenceThreshSelect.value
+                });
+                if (previewAbort) previewAbort.abort();
+                previewAbort = new AbortController();
+
+                els.previewBtn.dataset.loading = "true";
+                setLoading(els.previewBtn, true);
+
+                els.previewAudio.src = `/stream?${params.toString()}`;
+                els.previewAudio.load();
+
+                const playPromise = els.previewAudio.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(e => {
+                        if (e.name !== 'AbortError') {
+                            showError("Playback failed: " + e.message);
+                            stopPlayback();
+                        }
+                    });
+                }
+            });
+
+            els.previewAudio.addEventListener('error', () => {
+                // Ignore errors if source is empty (caused by stopPlayback)
+                if (!els.previewAudio.src || els.previewAudio.src === window.location.href) return;
+                showError("Streaming error: " + (els.previewAudio.error ? els.previewAudio.error.message : "Source failure"));
+                isStreaming = false; // Reset streaming flag on error
+                stopPlayback();
+            });
+
+            els.previewAudio.addEventListener('playing', () => {
+                isStreaming = false; // Reset streaming flag - stream started successfully
+                setLoading(els.previewBtn, false);
+                els.previewBtn.classList.add('playing');
+                els.previewBtn.dataset.loading = "";
+                setIcon(els.previewBtn, 'pause');
+                els.playbackPointer.style.display = 'block';
+                startPointerTracking();
+            });
+
+            els.previewAudio.addEventListener('loadedmetadata', () => {
+                // The actual duration might be shorter than metadata if trimmed or range-clipped
+                console.log("Media ready. Duration:", els.previewAudio.duration);
+                // We NO LONGER update sliders max here as it breaks the selection range.
+                // The player logic now handles mapping clip progress to the [start, end] range.
+            });
+
+            els.previewAudio.addEventListener('pause', () => {
+                els.previewBtn.classList.remove('playing');
+                setIcon(els.previewBtn, 'play');
+                stopPointerTracking();
+            });
+
+            els.previewAudio.addEventListener('ended', stopPlayback);
+
+            function stopPlayback() {
+                isStreaming = false; // Reset streaming flag
+                els.previewAudio.pause();
+                // Use removeAttribute and load() to clean up without triggering invalid URI errors
+                els.previewAudio.removeAttribute('src');
+                els.previewAudio.load();
+                els.previewBtn.classList.remove('playing');
+                els.previewBtn.dataset.loading = ""; // Clear loading state
+                setLoading(els.previewBtn, false);
+                setIcon(els.previewBtn, 'play');
+                els.playbackPointer.style.display = 'none';
+                els.currentTimeDisplay.textContent = "00:00";
+                stopPointerTracking();
+            }
+
+            function startPointerTracking() {
+                stopPointerTracking();
+                playbackInterval = setInterval(() => {
+                    const current = els.previewAudio.currentTime;
+                    const duration = els.previewAudio.duration;
+                    if (duration && duration > 0 && !isNaN(current)) {
+                        const start = parseFloat(els.startSlider.value);
+                        const end = parseFloat(els.endSlider.value);
+                        const selectedRange = end - start;
+
+                        // The processed clip plays from 0 to duration
+                        // Map this to the visual range [start, end] on the timeline
+                        // If duration < selectedRange (due to silence trim), we still map to full range
+                        const actualTimeOnTimeline = start + current;
+
+                        // Clamp to selected range
+                        const clampedTime = Math.min(actualTimeOnTimeline, end);
+                        const pct = (clampedTime / videoDuration) * 100;
+                        els.playbackPointer.style.left = pct + '%';
+                        els.currentTimeDisplay.textContent = formatTime(clampedTime);
+                    }
+                }, 100);
+            }
+
+            function stopPointerTracking() {
+                if (playbackInterval) {
+                    clearInterval(playbackInterval);
+                    playbackInterval = null;
+                }
+            }
+
+            // --- Process flow ---
+            els.downloadBtn.addEventListener('click', async () => {
+                stopPlayback();
+                session_id = Math.random().toString(36).substring(7);
+                els.downloadBtn.disabled = true;
+                els.success.style.display = 'none';
+
+                // Show pipeline progress and activate processing step
+                showPipeline();
+                if (isCached) {
+                    // Cache already done from search
+                    setPipelineStep('cache', 'done');
+                    els.pipelineConnector.classList.add('done');
+                    els.pipelineFill.style.width = '50%';
+                } else {
+                    // Cache still in progress
+                    setPipelineStep('cache', 'active');
+                    els.pipelineFill.style.width = '15%';
+                }
+                setPipelineStep('process', 'active');
+
+                const params = new URLSearchParams({
+                    url: els.urlInput.value.trim(),
+                    start_time: els.startSlider.value,
+                    end_time: els.endSlider.value,
+                    trim_silence: els.trimSilenceToggle.checked,
+                    silence_thresh: els.silenceThreshSelect.value,
+                    eq_preset: els.eqToggle && els.eqToggle.checked ? els.eqPresetSelect.value : '',
+                    mbc_preset: els.mbcToggle && els.mbcToggle.checked ? els.mbcPresetSelect.value : '',
+                    enhance: els.enhanceToggle.checked,
+                    enhance_intensity: els.enhanceIntensitySelect.value,
+                    normalize: els.normalizeToggle.checked,
+                    normalize_i: els.normalizeISelect.value,
+                    original: els.originalToggle.checked,
+                    session_id: session_id,
+                    delimiter: els.delimiterInput.value || '|'
+                });
+
+                // Add metadata params
+                if (els.metaTitle.value.trim()) params.set('meta_title', els.metaTitle.value.trim());
+                if (els.metaArtist.value.trim()) params.set('meta_artist', els.metaArtist.value.trim());
+                if (els.metaAlbum.value.trim()) params.set('meta_album', els.metaAlbum.value.trim());
+                if (els.metaGenre.value.trim()) params.set('meta_genre', els.metaGenre.value.trim());
+                if (els.metaYear.value.trim()) params.set('meta_year', els.metaYear.value.trim());
+
+                // Add custom tags and thumbnail as JSON
+                const metadataExtra = {};
+                const customTags = getCustomTags();
+                if (customTags.length > 0) metadataExtra.custom_tags = customTags;
+                if (customThumbnailBase64) metadataExtra.thumbnail_base64 = customThumbnailBase64;
+                if (Object.keys(metadataExtra).length > 0) {
+                    params.set('metadata_json', JSON.stringify(metadataExtra));
+                }
+
+                let downloadTriggered = false; // Prevent multiple download triggers
+
+                const poll = setInterval(async () => {
+                    try {
+                        const res = await fetch(`/progress/${session_id}`);
+                        const data = await res.json();
+
+                        // Also poll cache status during download if not yet cached
+                        if (!isCached) {
+                            try {
+                                const cres = await fetch(`/cache-status?url=${encodeURIComponent(els.urlInput.value.trim())}`);
+                                const cdata = await cres.json();
+                                if (cdata.cached) {
+                                    isCached = true;
+                                    setPipelineStep('cache', 'done');
+                                    els.pipelineConnector.classList.add('done');
+                                }
+                            } catch (e) { }
+                        }
+
+                        if (data.status === 'downloading' || data.status === 'processing') {
+                            // Map backend progress (0-100) to pipeline bar (50-100)
+                            const pipelinePct = isCached ? 50 + (data.progress * 0.5) : 25 + (data.progress * 0.25);
+                            els.pipelineFill.style.width = `${pipelinePct}%`;
+                        } else if (data.status === 'finished' && !downloadTriggered) {
+                            downloadTriggered = true;
+                            clearInterval(poll);
+                            els.downloadBtn.disabled = false;
+
+                            // Mark everything as done
+                            setPipelineStep('cache', 'done');
+                            setPipelineStep('process', 'done');
+                            els.pipelineConnector.classList.add('done');
+                            els.pipelineFill.style.width = '100%';
+
+                            // Check if browser download mode
+                            if (data.browser_download && data.path) {
+                                const downloadUrl = `/download-file?path=${encodeURIComponent(data.path)}&filename=${encodeURIComponent(data.filename)}`;
+                                const a = document.createElement('a');
+                                a.href = downloadUrl;
+                                a.download = data.filename;
+                                document.body.appendChild(a);
+                                a.click();
+                                document.body.removeChild(a);
+                                showToast(`Downloading: ${data.filename}`);
+                            } else {
+                                els.success.style.display = 'block';
+                                showToast(data.path);
+                            }
+                        } else if (data.status === 'error') {
+                            clearInterval(poll);
+                            showError(data.message);
+                            els.downloadBtn.disabled = false;
+                            hidePipeline();
+                        }
+                    } catch (e) { }
+                }, 1000);
+
+                try {
+                    const res = await fetch(`/save?${params.toString()}`, { method: 'POST' });
+                    if (!res.ok) throw new Error(await res.text());
+                } catch (err) {
+                    showError(err.message);
+                    els.downloadBtn.disabled = false;
+                    clearInterval(poll);
+                    hidePipeline();
+                }
+            });
+
+            els.uploadNextBtn.addEventListener('click', () => location.reload());
+
+            // --- Utils ---
+            function setLoading(btn, loading) {
+                const icon = btn.querySelector('i, svg');
+                if (loading) {
+                    btn.disabled = true;
+                    if (icon) icon.classList.add('spin');
+                } else {
+                    btn.disabled = false;
+                    if (icon) icon.classList.remove('spin');
+                }
+            }
+
+            function setIcon(btn, name) {
+                const icon = btn.querySelector('i, svg');
+                if (icon) {
+                    icon.setAttribute('data-lucide', name);
+                    lucide.createIcons();
+                }
+            }
+
+            function showError(msg) {
+                // Sanitize raw technical errors into friendly messages
+                let friendly = msg;
+                if (/NetworkError|Failed to fetch|fetch resource/i.test(msg)) {
+                    friendly = 'Connection error — check your network';
+                } else if (/could not parse|invalid.*url|not a valid/i.test(msg)) {
+                    friendly = 'Please enter a valid YouTube URL';
+                } else if (/hostname/i.test(msg)) {
+                    friendly = 'Invalid URL format';
+                }
+                document.getElementById('errorToastMsg').textContent = friendly;
+                const toast = document.getElementById('errorToast');
+                toast.classList.add('show');
+                setTimeout(() => toast.classList.remove('show'), 5000);
+            }
+
+            function showToast(path) {
+                document.getElementById('toastPath').textContent = path;
+                const toast = document.getElementById('toast');
+                toast.classList.add('show');
+                setTimeout(() => toast.classList.remove('show'), 6000);
+            }
+        </script>
 </body>
 
 </html>
