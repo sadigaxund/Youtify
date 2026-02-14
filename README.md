@@ -4,6 +4,7 @@
 A modern, web-based tool for downloading high-quality audio from YouTube with advanced processing features.
 
 
+[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/C3CCQu8Uuhc/0.jpg)](https://www.youtube.com/watch?v=C3CCQu8Uuhc)
 
 
 
