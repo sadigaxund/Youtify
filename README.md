@@ -3,6 +3,10 @@
 
 A modern, web-based tool for downloading high-quality audio from YouTube with advanced processing features.
 
+
+
+
+
 ## Features
 
 - **High Quality Audio**: Downloads best audio stream and converts to MP3 (default 320kbps via pydub export).
@@ -14,7 +18,46 @@ A modern, web-based tool for downloading high-quality audio from YouTube with ad
   - **Browser Download**: Process and download directly to your device.
   - **Server Save**: Mount a volume and save files directly to your server (e.g., for Jellyfin/Nextcloud).
 
-## Build & Run with Docker
+## Installation
+
+### Option 1: Run with Python
+
+1. **Install Prerequisites**
+   Ensure you have Python 3.11+ and FFmpeg installed:
+   ```bash
+   # Linux (Ubuntu/Debian)
+   sudo apt install ffmpeg python3-pip
+   # Linux (Fedora)
+   sudo dnf install ffmpeg python3-pip
+
+   # macOS
+   brew install ffmpeg
+   ```
+
+2. **Install Dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Run the App**
+   ```bash
+   python main.py
+   ```
+
+   **Options:**
+   - `--save-dir "/path/to/downloads"`: Save files to a specific directory on the server.
+   - `SAVE_DIRECTORY="/path"`: Alternative using environment variables.
+
+   *Example:*
+   ```bash
+   # Run with a save directory
+   python main.py --save-dir ~/Music/Youtify
+   ```
+   *Note: If no directory is set, the app defaults to **Browser Download Mode**.*
+
+   The server will start at `http://localhost:8000`.
+
+### Option 2: Build & Run with Docker
 
 Build the image:
 ```bash
