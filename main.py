@@ -7,7 +7,7 @@ import datetime
 import traceback
 from typing import Optional, Dict
 
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Body
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -239,7 +239,7 @@ def save_audio(
     mbc_preset: Optional[str] = Query(None, description="Multiband compressor preset"),
     normalize: bool = Query(True, description="Apply loudness normalization"),
     normalize_i: float = Query(-16.0, description="Target loudness in LUFS"),
-    enhance: bool = Query(False, description="Apply audio enhancement"),
+    enhance_mode: Optional[str] = Query(None, description="Enhancement mode: Restore/Vocal/Crisp/Warmth"),
     enhance_intensity: float = Query(1.5, description="Enhancement intensity"),
     original: bool = Query(False, description="Bypass all processing"),
     session_id: Optional[str] = Query(None, description="Optional session ID for progress tracking"),
@@ -249,8 +249,10 @@ def save_audio(
     meta_genre: Optional[str] = Query(None, description="Genre metadata tag"),
     meta_year: Optional[str] = Query(None, description="Year metadata tag"),
     meta_composer: Optional[str] = Query(None, description="Composer metadata tag"),
-    metadata_json: Optional[str] = Query(None, description="JSON string with custom_tags and thumbnail_base64"),
-    delimiter: str = Query("|", description="Delimiter used between artist/genre tags")
+    delimiter: str = Query("|", description="Delimiter used between artist/genre tags"),
+    # Sent in the POST body (not the query string): a base64 cover image can be
+    # large and would blow past URL/header length limits if put in the URL.
+    metadata_json: Optional[str] = Body(None, embed=True, description="JSON string with custom_tags and thumbnail_base64")
 ):
     """
     Downloads and saves audio directly to /mnt/Apps.
@@ -360,7 +362,7 @@ def save_audio(
             silence_thresh=silence_thresh,
             eq_preset=None if original else eq_preset,
             mbc_preset=None if original else mbc_preset,
-            enhance=False if original else enhance,
+            enhance_mode=None if original else enhance_mode,
             enhance_intensity=enhance_intensity,
             normalize=False if original else normalize,
             normalize_i=normalize_i,
@@ -448,74 +450,59 @@ async def download_file(
 @app.get("/stream")
 def stream_audio(
     url: str = Query(..., description="The YouTube URL to stream"),
-    start_time: Optional[float] = Query(None),
-    end_time: Optional[float] = Query(None),
     eq_preset: Optional[str] = Query(None),
     mbc_preset: Optional[str] = Query(None),
     normalize: bool = Query(True),
     normalize_i: float = Query(-16.0),
-    enhance: bool = Query(False),
+    enhance_mode: Optional[str] = Query(None),
     enhance_intensity: float = Query(1.5),
     original: bool = Query(False),
-    trim_silence: bool = Query(True),
-    silence_thresh: float = Query(-40.0)
 ):
     """
-    Streams processed audio for preview using FFmpeg on-the-fly.
+    Preview the FULL track with the chosen effects applied — but WITHOUT range
+    clipping or silence trimming. Those are mechanical cuts applied only on
+    export; keeping the preview full-length lets the browser seek freely and the
+    playhead map 1:1 to the timeline.
+
+    Renders once to a per-effect cached MP3 and serves it via FileResponse, which
+    supports HTTP range requests (seekable) and makes A/B switching instant.
     """
-    from youtube_downloader import download_to_cache, get_ffmpeg_stream_args
-    import subprocess
+    from youtube_downloader import download_to_cache, process_audio
+    import hashlib
 
     try:
-        # 0. Quick duration check
         info = get_video_info(url)
         if info.get('duration', 0) > 1800:
             raise HTTPException(status_code=403, detail="Preview restricted to videos under 30 minutes.")
 
-        # 1. Ensure cached
+        video_id = validate_youtube_url(url)
         try:
             cache_file = download_to_cache(url, CACHE_DIR)
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Streaming failed: Could not cache audio. {str(e)}")
+            raise HTTPException(status_code=400, detail=f"Could not cache audio. {str(e)}")
 
-        # 2. Get FFmpeg args for streaming
-        ffmpeg_args = get_ffmpeg_stream_args(
-            input_path=cache_file,
-            start_time=start_time,
-            end_time=end_time,
-            eq_preset=eq_preset,
-            mbc_preset=mbc_preset,
-            enhance=enhance,
-            enhance_intensity=enhance_intensity,
-            normalize=normalize,
-            normalize_i=normalize_i,
-            original=original,
-            trim_silence=trim_silence,
-            silence_thresh=silence_thresh
-        )
+        # Hash the effect set (NOT range/silence) so identical settings reuse the
+        # same rendered file — instant replay and A/B comparison.
+        key = f"{eq_preset}|{mbc_preset}|{enhance_mode}|{enhance_intensity}|{normalize}|{normalize_i}|{original}"
+        h = hashlib.md5(key.encode()).hexdigest()[:10]
+        out = os.path.join(CACHE_DIR, f"prev_{video_id}_{h}.mp3")
 
-        # 3. Stream process
-        process = subprocess.Popen(
-            ffmpeg_args,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL
-        )
+        if not (os.path.exists(out) and os.path.getsize(out) > 1024):
+            process_audio(
+                cache_file, out, total_duration=None, progress_cb=None,
+                eq_preset=eq_preset, mbc_preset=mbc_preset,
+                enhance_mode=enhance_mode, enhance_intensity=enhance_intensity,
+                normalize=normalize, normalize_i=normalize_i,
+                original=original, trim_silence=False,
+            )
 
-        def iter_file():
-            try:
-                while True:
-                    chunk = process.stdout.read(4096)
-                    if not chunk:
-                        break
-                    yield chunk
-            finally:
-                process.terminate()
-
-        return StreamingResponse(iter_file(), media_type="audio/mpeg")
+        return FileResponse(out, media_type="audio/mpeg")
+    except HTTPException:
+        raise
     except Exception as e:
         error_msg = str(e)
         if "Invalid data found" in error_msg:
-             error_msg = "Invalid audio data in cache. Please refresh the page and try searching again."
+            error_msg = "Invalid audio data in cache. Please refresh the page and try searching again."
         raise HTTPException(status_code=500, detail=error_msg)
 
 

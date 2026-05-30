@@ -68,23 +68,56 @@ MBC_PRESETS = {
 }
 
 
-def build_enhance_filter(intensity: float = 1.5) -> str:
-    """
-    Subtle "restore / clarity" effect.
+# Enhancement modes — mutually exclusive "character" of the signal. Each is a
+# distinct DSP recipe (not just an intensity), chosen at download/preview time.
+# All are mono-safe (no stereo widening) so the original image is preserved.
+ENHANCE_MODES = ('Restore', 'Vocal', 'Crisp', 'Warmth')
 
-    YouTube audio is lossy AAC: psychoacoustic encoding throws away high-frequency
-    detail, leaving the top end dull. Rather than the old crystalizer+extrastereo
-    (which sharpens harshly and can introduce phase issues), this regenerates the
-    lost upper harmonics with aexciter and adds a gentle high shelf for "air".
-    Mono-safe, no stereo widening — the original feel is preserved.
+
+def build_enhance_filter(mode: Optional[str], intensity: float = 1.5) -> Optional[str]:
     """
-    # Map UI intensity (1.0 / 1.5 / 2.0 -> Low / Mid / High) to gentle values.
-    amount = {1.0: 2.0, 1.5: 3.0, 2.0: 4.5}.get(round(intensity, 1), 3.0)
-    shelf_g = {1.0: 1.5, 1.5: 2.5, 2.0: 3.5}.get(round(intensity, 1), 2.5)
-    return (
-        f"aexciter=level_in=1:level_out=1:amount={amount}:drive=8.5:blend=0:freq=7000:ceil=16000,"
-        f"highshelf=g={shelf_g}:f=10000"
-    )
+    Returns the FFmpeg filter string for an enhancement mode, or None if disabled.
+
+    intensity (1.0 / 1.5 / 2.0 -> Low / Mid / High) scales the amount per mode.
+
+      Restore — regenerate highs lost to lossy AAC (aexciter + gentle high shelf).
+                Subtle, the safe default.
+      Crisp   — stronger top-end sparkle/air for dull or muffled sources.
+      Vocal   — presence lift (2-5kHz) + mud cut (~300Hz) + a touch of air, so
+                vocals/speech sit clearer. Good for covers, acoustic, podcasts.
+      Warmth  — low-mid warmth + tame harsh upper-mids (de-harsh) for shrill or
+                fatiguing recordings.
+    """
+    if not mode or mode in ('None', ''):
+        return None
+
+    # Pick low / mid / high value by intensity.
+    def L(lo, mi, hi):
+        return {1.0: lo, 1.5: mi, 2.0: hi}.get(round(intensity, 1), mi)
+
+    if mode == 'Restore':
+        amt, g = L(2.0, 3.0, 4.5), L(1.5, 2.5, 3.5)
+        return (f"aexciter=level_in=1:level_out=1:amount={amt}:drive=8.5:blend=0:freq=7000:ceil=16000,"
+                f"highshelf=g={g}:f=10000")
+
+    if mode == 'Crisp':
+        amt, g = L(3.5, 5.5, 7.5), L(3.0, 4.5, 6.0)
+        return (f"aexciter=level_in=1:level_out=1:amount={amt}:drive=10:blend=0:freq=6000:ceil=17000,"
+                f"highshelf=g={g}:f=9000")
+
+    if mode == 'Vocal':
+        pres, mud, air = L(2.0, 3.0, 4.0), L(2.0, 3.0, 4.0), L(1.5, 2.5, 3.5)
+        return (f"equalizer=f=300:width_type=q:w=1.2:g=-{mud},"
+                f"equalizer=f=3000:width_type=q:w=1.5:g={pres},"
+                f"aexciter=level_in=1:level_out=1:amount={air}:drive=8:blend=0:freq=9000:ceil=16000")
+
+    if mode == 'Warmth':
+        warm, harsh, deess = L(1.5, 2.5, 3.5), L(2.0, 3.0, 4.0), L(0.10, 0.20, 0.30)
+        return (f"equalizer=f=200:width_type=q:w=1.0:g={warm},"
+                f"equalizer=f=4500:width_type=q:w=2.0:g=-{harsh},"
+                f"deesser=i={deess}")
+
+    return None
 
 
 def build_filter_chain(
@@ -92,7 +125,7 @@ def build_filter_chain(
     end_time: Optional[float] = None,
     eq_preset: Optional[str] = None,
     mbc_preset: Optional[str] = None,
-    enhance: bool = False,
+    enhance_mode: Optional[str] = None,
     enhance_intensity: float = 1.5,
     normalize: bool = True,
     normalize_i: float = -16.0,
@@ -135,9 +168,10 @@ def build_filter_chain(
     if mbc_preset and mbc_preset in MBC_PRESETS:
         filters.append(MBC_PRESETS[mbc_preset])
 
-    # 5. Restore / clarity (subtle high-frequency regeneration)
-    if enhance:
-        filters.append(build_enhance_filter(enhance_intensity))
+    # 5. Enhancement mode (Restore / Vocal / Crisp / Warmth)
+    enh = build_enhance_filter(enhance_mode, enhance_intensity)
+    if enh:
+        filters.append(enh)
 
     # 6. Loudness normalization + true-peak limiter (final stage)
     if normalize:
@@ -344,7 +378,7 @@ def download_youtube_audio(
     silence_thresh: float = -40.0,
     eq_preset: Optional[str] = None,
     mbc_preset: Optional[str] = None,
-    enhance: bool = False,
+    enhance_mode: Optional[str] = None,
     enhance_intensity: float = 1.5,
     normalize: bool = True,
     normalize_i: float = -16.0,
@@ -413,7 +447,7 @@ def download_youtube_audio(
         end_time=end_time,
         eq_preset=eq_preset,
         mbc_preset=mbc_preset,
-        enhance=enhance,
+        enhance_mode=enhance_mode,
         enhance_intensity=enhance_intensity,
         normalize=normalize,
         normalize_i=normalize_i,
@@ -443,7 +477,7 @@ def download_youtube_audio(
                 mbc_preset=mbc_preset if not original else None,
                 normalize=normalize if not original else False,
                 normalize_i=normalize_i,
-                enhance=enhance if not original else False,
+                enhance_mode=enhance_mode if not original else None,
                 trim_silence=trim_silence_flag if not original else False,
                 original=original,
                 thumbnail_path=None,
@@ -502,7 +536,7 @@ def embed_custom_metadata(
     mbc_preset: Optional[str] = None,
     normalize: bool = False,
     normalize_i: float = -16.0,
-    enhance: bool = False,
+    enhance_mode: Optional[str] = None,
     trim_silence: bool = False,
     original: bool = False,
     thumbnail_path: Optional[str] = None,
@@ -567,7 +601,8 @@ def embed_custom_metadata(
             if eq_preset: processing_parts.append(f"EQ: {eq_preset}")
             if mbc_preset: processing_parts.append(f"Compression: {mbc_preset}")
             if normalize: processing_parts.append(f"Normalized: {normalize_i} LUFS")
-            if enhance: processing_parts.append("Stereo Enhanced")
+            if enhance_mode and enhance_mode not in ('None', ''):
+                processing_parts.append(f"Enhance: {enhance_mode}")
             if trim_silence: processing_parts.append("Silence Trimmed")
         
         processing_info = ", ".join(processing_parts) if processing_parts else "No processing"
@@ -710,7 +745,7 @@ def get_ffmpeg_stream_args(
     end_time: Optional[float] = None,
     eq_preset: Optional[str] = None,
     mbc_preset: Optional[str] = None,
-    enhance: bool = False,
+    enhance_mode: Optional[str] = None,
     enhance_intensity: float = 1.5,
     normalize: bool = True,
     normalize_i: float = -16.0,
@@ -731,7 +766,7 @@ def get_ffmpeg_stream_args(
         end_time=end_time,
         eq_preset=eq_preset,
         mbc_preset=mbc_preset,
-        enhance=enhance,
+        enhance_mode=enhance_mode,
         enhance_intensity=enhance_intensity,
         normalize=normalize,
         normalize_i=normalize_i,

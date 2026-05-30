@@ -47,6 +47,12 @@
             width: 100%;
             max-width: 500px;
             padding: 2rem;
+            transition: max-width 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        /* After search, widen into the two-column workspace */
+        .container.expanded {
+            max-width: 940px;
         }
 
         .card {
@@ -393,11 +399,29 @@
             box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
         }
 
-        /* Integrated Options */
+        /* Integrated Options — two-column workspace (set display:grid via JS) */
         .options-panel {
             display: none;
-            flex-direction: column;
+            grid-template-columns: 1fr 1fr;
             gap: 1rem;
+            align-items: start;
+            animation: slideDown 0.45s ease-out;
+        }
+
+        /* Each effects/metadata card stacks its own contents vertically */
+        .options-panel .processing-card {
+            align-self: stretch;
+        }
+
+        /* Single column on narrow screens — no horizontal cramming on mobile */
+        @media (max-width: 720px) {
+            .container.expanded {
+                max-width: 500px;
+            }
+
+            .options-panel {
+                grid-template-columns: 1fr;
+            }
         }
 
         .filename-container {
@@ -975,12 +999,15 @@
                             </div>
                         </div>
                         <div class="grid-item">
-                            <label title="Regenerates high-frequency detail lost to YouTube's lossy compression (aexciter + gentle high shelf). Subtle, mono-safe — keeps the original feel.">Clarity (Restore)</label>
+                            <label title="Pick one enhancement character. Restore: recover highs lost to YouTube's compression. Vocal Clarity: presence lift + de-mud for clearer vocals. Crisp/Air: stronger top-end sparkle. Warmth/De-harsh: low-mid warmth + tame harshness. All mono-safe.">Enhance</label>
                             <div style="display:flex; gap:0.4rem; align-items:center;">
-                                <label class="mini-toggle">
-                                    <input type="checkbox" id="enhanceToggle">
-                                    <div class="mini-check"><i data-lucide="check"></i></div>
-                                </label>
+                                <select id="enhanceModeSelect" class="styled-select-mini">
+                                    <option value="" selected>Off</option>
+                                    <option value="Restore">Restore</option>
+                                    <option value="Vocal">Vocal Clarity</option>
+                                    <option value="Crisp">Crisp / Air</option>
+                                    <option value="Warmth">Warmth / De-harsh</option>
+                                </select>
                                 <select id="enhanceIntensitySelect" class="styled-select-mini"
                                     style="width:auto; padding:0.2rem 0.4rem;">
                                     <option value="1.0">Low</option>
@@ -1058,6 +1085,9 @@
                                     autocomplete="off"
                                     style="flex:1; min-width:60px; padding:0.15rem 0; font-size:0.75rem; border:none; background:transparent; color:#fff; outline:none;">
                             </div>
+                            <div id="artistDropdown"
+                                style="display:none; position:absolute; left:0; right:0; top:calc(100% + 2px); z-index:100; max-height:180px; overflow-y:auto; background:rgba(15,15,25,0.95); border:1px solid var(--card-border); border-radius:10px; backdrop-filter:blur(16px); box-shadow:0 8px 24px rgba(0,0,0,0.4);">
+                            </div>
                             <input type="hidden" id="metaArtist">
                         </div>
                         <div class="grid-item" style="grid-column: 1 / -1; position:relative;">
@@ -1116,31 +1146,31 @@
                         </div>
                     </div>
 
-                    <!-- Pipeline Progress -->
-                    <div id="pipelineProgress" class="pipeline-progress">
-                        <div class="pipeline-steps">
-                            <div id="stepCache" class="pipeline-step">
-                                <i data-lucide="download-cloud" class="step-icon" id="stepCacheIcon"></i>
-                                <span id="stepCacheLabel">Cache</span>
-                            </div>
-                            <span id="pipelineConnector" class="pipeline-connector">→</span>
-                            <div id="stepProcess" class="pipeline-step">
-                                <i data-lucide="cpu" class="step-icon" id="stepProcessIcon"></i>
-                                <span id="stepProcessLabel">Process</span>
-                            </div>
+                </div>
+
+                <!-- Pipeline Progress (spans full width below both columns) -->
+                <div id="pipelineProgress" class="pipeline-progress" style="grid-column:1 / -1;">
+                    <div class="pipeline-steps">
+                        <div id="stepCache" class="pipeline-step">
+                            <i data-lucide="download-cloud" class="step-icon" id="stepCacheIcon"></i>
+                            <span id="stepCacheLabel">Cache</span>
                         </div>
-                        <div class="pipeline-bar">
-                            <div id="pipelineFill" class="pipeline-fill"></div>
+                        <span id="pipelineConnector" class="pipeline-connector">→</span>
+                        <div id="stepProcess" class="pipeline-step">
+                            <i data-lucide="cpu" class="step-icon" id="stepProcessIcon"></i>
+                            <span id="stepProcessLabel">Process</span>
                         </div>
-                        <div class="pipeline-status">
-                            <span id="pipelineLabel">Preparing…</span>
-                            <span id="pipelinePct">0%</span>
-                        </div>
+                    </div>
+                    <div class="pipeline-bar">
+                        <div id="pipelineFill" class="pipeline-fill"></div>
+                    </div>
+                    <div class="pipeline-status">
+                        <span id="pipelineLabel">Preparing…</span>
+                        <span id="pipelinePct">0%</span>
                     </div>
                 </div>
 
-
-                <div style="display: flex; gap: 0.75rem;">
+                <div style="display: flex; gap: 0.75rem; grid-column:1 / -1;">
                     <button id="downloadBtn" style="flex:2">
                         <i data-lucide="download"></i>
                         <span>Download</span>
@@ -1255,7 +1285,7 @@
                 eqPresetSelect: document.getElementById('eqPresetSelect'),
                 mbcToggle: document.getElementById('mbcToggle'),
                 mbcPresetSelect: document.getElementById('mbcPresetSelect'),
-                enhanceToggle: document.getElementById('enhanceToggle'),
+                enhanceModeSelect: document.getElementById('enhanceModeSelect'),
                 enhanceIntensitySelect: document.getElementById('enhanceIntensitySelect'),
                 trimSilenceToggle: document.getElementById('trimSilenceToggle'),
                 silenceThreshSelect: document.getElementById('silenceThreshSelect'),
@@ -1285,6 +1315,7 @@
                 metaArtist: document.getElementById('metaArtist'),
                 artistContainer: document.getElementById('artistContainer'),
                 artistInput: document.getElementById('artistInput'),
+                artistDropdown: document.getElementById('artistDropdown'),
                 metaAlbum: document.getElementById('metaAlbum'),
                 metaGenre: document.getElementById('metaGenre'),
                 genreContainer: document.getElementById('genreContainer'),
@@ -1378,10 +1409,28 @@
                 if (!file) return;
                 const reader = new FileReader();
                 reader.onload = (ev) => {
-                    els.metaThumb.src = ev.target.result;
-                    // Store base64 (strip data URL prefix)
-                    customThumbnailBase64 = ev.target.result.split(',')[1];
-                    els.resetThumbBtn.style.display = 'flex';
+                    const img = new Image();
+                    img.onload = () => {
+                        // Downscale to a square cover (max 800px) and re-encode as
+                        // JPEG to keep the embedded art (and the request body) small.
+                        // Transparency is flattened onto black to suit the dark theme.
+                        const MAX = 800;
+                        let { width: w, height: h } = img;
+                        const scale = Math.min(1, MAX / Math.max(w, h));
+                        w = Math.round(w * scale); h = Math.round(h * scale);
+                        const canvas = document.createElement('canvas');
+                        canvas.width = w; canvas.height = h;
+                        const ctx = canvas.getContext('2d');
+                        ctx.fillStyle = '#000';
+                        ctx.fillRect(0, 0, w, h);
+                        ctx.drawImage(img, 0, 0, w, h);
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                        els.metaThumb.src = dataUrl;
+                        customThumbnailBase64 = dataUrl.split(',')[1];
+                        els.resetThumbBtn.style.display = 'flex';
+                    };
+                    img.onerror = () => showError('Could not read that image');
+                    img.src = ev.target.result;
                 };
                 reader.readAsDataURL(file);
             });
@@ -1420,22 +1469,64 @@
                 return tags;
             }
 
+            // --- localStorage history (previously entered genres / artists) ---
+            // Stored client-side so suggestions persist across sessions without a
+            // backend. Most-recent-first, deduped (case-insensitive), capped.
+            const HIST = {
+                GENRES: 'youtify_genres',
+                ARTISTS: 'youtify_artists',
+                load(key) { try { return JSON.parse(localStorage.getItem(key)) || []; } catch (e) { return []; } },
+                add(key, val) {
+                    val = (val || '').trim();
+                    if (!val) return;
+                    let arr = HIST.load(key).filter(x => x.toLowerCase() !== val.toLowerCase());
+                    arr.unshift(val);
+                    localStorage.setItem(key, JSON.stringify(arr.slice(0, 200)));
+                }
+            };
+
             // --- Genre Multi-Select with Autocomplete ---
-            const GENRE_LIST = [
-                // Standard music genres
-                'Pop', 'Rock', 'Hip-Hop', 'R&B', 'Jazz', 'Blues', 'Country', 'Folk', 'Electronic', 'Dance',
-                'House', 'Techno', 'Trance', 'Dubstep', 'Reggae', 'Ska', 'Punk', 'Metal', 'Alternative',
-                'Indie', 'Soul', 'Funk', 'Disco', 'Gospel', 'Latin', 'Bossa Nova', 'Ambient', 'New Age',
-                'World', 'Acoustic', 'Lo-Fi', 'Trap', 'Drill', 'K-Pop', 'J-Pop', 'Synthwave', 'Chillout',
-                // Classical & Instrumental
-                'Classical', 'Violin', 'Piano', 'Flute', 'Cello', 'Guitar', 'Kalimba', 'Cover', 'Original', 'Anime',
-                'Orchestra', 'Concerto', 'Symphony', 'Sonata', 'Suite', 'Partita', 'Rondo',
-                'Theme and Variations', 'Fugue', 'Prelude', 'Etude', 'Nocturne', 'Waltz', 'Mazurka',
-                'Polonaise', 'Minuet', 'Scherzo', 'Toccata', 'Fantasia', 'Rhapsody', 'Overture',
-                'Sinfonia concertante', 'Mass', 'Opera', 'Oratorio', 'Cantata',
-                // Soundtrack & other
-                'Soundtrack', 'Film Score', 'Video Game', 'Cinematic', 'Instrumental', "Roma", "Medieval", "Renaissance", "Baroque", "Romantic", "Impressionist", "Modern", "Postmodern", "Contemporary"
+            // Built-in seed genres. User-entered genres are remembered separately in
+            // localStorage (HIST.GENRES) and float to the top of suggestions.
+            const GENRE_SEED = [
+                // Pop / rock / urban
+                'Pop', 'Rock', 'Hip-Hop', 'Rap', 'R&B', 'Soul', 'Funk', 'Disco', 'Blues', 'Country', 'Folk',
+                'Americana', 'Bluegrass', 'Singer-Songwriter', 'Alternative', 'Indie', 'Indie Pop', 'Indie Rock',
+                'Punk', 'Pop Punk', 'Emo', 'Hardcore', 'Grunge', 'Shoegaze', 'Post-Rock', 'Math Rock',
+                'Progressive Rock', 'Psychedelic', 'Garage Rock', 'Surf', 'Metal', 'Heavy Metal', 'Metalcore',
+                'Death Metal', 'Black Metal', 'Doom Metal', 'Nu Metal', 'Gospel', 'Choir', 'A Cappella',
+                // Electronic / dance
+                'Electronic', 'EDM', 'Dance', 'House', 'Deep House', 'Tech House', 'Progressive House',
+                'Techno', 'Trance', 'Dubstep', 'Drum & Bass', 'Garage', 'UK Garage', 'Breakbeat', 'Hardstyle',
+                'Future Bass', 'Trap', 'Drill', 'Phonk', 'Synthwave', 'Vaporwave', 'Chillwave', 'Chillout',
+                'Chillhop', 'Lo-Fi', 'Lo-Fi Hip-Hop', 'Ambient', 'Downtempo', 'New Age', 'IDM',
+                // Jazz family
+                'Jazz', 'Smooth Jazz', 'Bebop', 'Swing', 'Big Band', 'Fusion', 'Bossa Nova', 'Boogie',
+                // World / regional
+                'Latin', 'Reggaeton', 'Salsa', 'Bachata', 'Cumbia', 'Tango', 'Flamenco', 'Reggae', 'Ska',
+                'Dancehall', 'Afrobeat', 'Afrobeats', 'Amapiano', 'K-Pop', 'J-Pop', 'C-Pop', 'City Pop',
+                'Anime', 'Bollywood', 'Arabic', 'Turkish', 'Celtic', 'World',
+                // Classical & instrumental
+                'Classical', 'Baroque', 'Romantic', 'Medieval', 'Renaissance', 'Impressionist', 'Modern',
+                'Contemporary', 'Minimalism', 'Neoclassical', 'Orchestra', 'Concerto', 'Symphony', 'Sonata',
+                'Suite', 'Partita', 'Rondo', 'Theme and Variations', 'Fugue', 'Prelude', 'Etude', 'Nocturne',
+                'Waltz', 'Mazurka', 'Polonaise', 'Minuet', 'Scherzo', 'Toccata', 'Fantasia', 'Rhapsody',
+                'Overture', 'Sinfonia concertante', 'Mass', 'Opera', 'Oratorio', 'Cantata',
+                'Piano', 'Violin', 'Cello', 'Flute', 'Guitar', 'Harp', 'Kalimba', 'Acoustic', 'Instrumental',
+                // Soundtrack & functional
+                'Soundtrack', 'Film Score', 'Video Game', 'Cinematic', 'Epic', 'Trailer', 'Meditation',
+                'Study', 'Workout', 'Cover', 'Original', 'Remix', 'Live', 'Holiday', 'Christmas'
             ];
+            // Merged candidate list: user history first (recent), then seed, deduped.
+            function genreCandidates() {
+                const seen = new Set();
+                const out = [];
+                [...HIST.load(HIST.GENRES), ...GENRE_SEED].forEach(g => {
+                    const k = g.toLowerCase();
+                    if (!seen.has(k)) { seen.add(k); out.push(g); }
+                });
+                return out;
+            }
             let selectedGenres = [];
             let selectedArtists = [];
 
@@ -1458,8 +1549,10 @@
                 name = name.trim();
                 if (!name || selectedArtists.includes(name)) return;
                 selectedArtists.push(name);
+                HIST.add(HIST.ARTISTS, name); // remember for future suggestions
                 renderArtistTags();
                 els.artistInput.value = '';
+                setTimeout(() => showArtistDropdown(''), 50);
             }
 
             window.removeArtist = function (name) {
@@ -1467,8 +1560,59 @@
                 renderArtistTags();
             };
 
+            // Artist autocomplete sourced purely from localStorage history.
+            let currentArtistFocus = -1;
+
+            function showArtistDropdown(filter = '') {
+                currentArtistFocus = -1;
+                const dd = els.artistDropdown;
+                dd.innerHTML = '';
+                const lf = filter.toLowerCase();
+                const matches = HIST.load(HIST.ARTISTS).filter(a =>
+                    !selectedArtists.includes(a) && a.toLowerCase().includes(lf)
+                ).slice(0, 12);
+
+                if (matches.length === 0) { dd.style.display = 'none'; return; }
+
+                matches.forEach(artist => {
+                    const item = document.createElement('div');
+                    item.textContent = artist;
+                    item.className = 'artist-item';
+                    item.style.cssText = 'padding:0.45rem 0.75rem; font-size:0.78rem; cursor:pointer; color:rgba(255,255,255,0.85); transition:all 0.15s ease; border-bottom:1px solid rgba(255,255,255,0.04);';
+                    item.onmouseenter = () => {
+                        Array.from(dd.children).forEach(c => { c.style.background = 'transparent'; c.classList.remove('active'); });
+                        item.classList.add('active'); item.style.background = 'rgba(100,140,255,0.12)';
+                    };
+                    item.onmouseleave = () => { item.classList.remove('active'); item.style.background = 'transparent'; };
+                    item.onmousedown = (e) => { e.preventDefault(); addArtist(artist); };
+                    dd.appendChild(item);
+                });
+                dd.style.display = 'block';
+            }
+
+            function hideArtistDropdown() { els.artistDropdown.style.display = 'none'; currentArtistFocus = -1; }
+
+            function setArtistActive(items) {
+                if (!items || !items.length) return;
+                Array.from(items).forEach(i => { i.classList.remove('active'); i.style.background = 'transparent'; });
+                if (currentArtistFocus >= items.length) currentArtistFocus = 0;
+                if (currentArtistFocus < 0) currentArtistFocus = items.length - 1;
+                const t = items[currentArtistFocus];
+                t.classList.add('active'); t.style.background = 'rgba(100,140,255,0.12)';
+                t.scrollIntoView({ block: 'nearest' });
+                els.artistInput.value = t.textContent;
+            }
+
+            els.artistInput.addEventListener('input', () => showArtistDropdown(els.artistInput.value));
+            els.artistInput.addEventListener('focus', () => showArtistDropdown(els.artistInput.value));
             els.artistInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
+                const items = els.artistDropdown.getElementsByClassName('artist-item');
+                if (e.key === 'ArrowDown') {
+                    currentArtistFocus++; setArtistActive(items); e.preventDefault();
+                    if (els.artistDropdown.style.display === 'none') showArtistDropdown(els.artistInput.value);
+                } else if (e.key === 'ArrowUp') {
+                    currentArtistFocus--; setArtistActive(items); e.preventDefault();
+                } else if (e.key === 'Enter') {
                     e.preventDefault();
                     const val = els.artistInput.value.trim();
                     if (val) addArtist(val);
@@ -1479,6 +1623,7 @@
             });
             // Auto-add pending text when clicking away
             els.artistInput.addEventListener('blur', () => {
+                setTimeout(hideArtistDropdown, 150);
                 const val = els.artistInput.value.trim();
                 if (val) addArtist(val);
             });
@@ -1513,6 +1658,7 @@
 
                 if (!genre || selectedGenres.includes(genre)) return;
                 selectedGenres.push(genre);
+                HIST.add(HIST.GENRES, genre); // remember for future suggestions
                 renderGenreTags();
                 els.genreInput.value = '';
                 // Re-show dropdown since focus is still on the input
@@ -1531,7 +1677,7 @@
                 const dd = els.genreDropdown;
                 dd.innerHTML = '';
                 const lf = filter.toLowerCase();
-                const matches = GENRE_LIST.filter(g =>
+                const matches = genreCandidates().filter(g =>
                     !selectedGenres.includes(g) && g.toLowerCase().includes(lf)
                 ).slice(0, 15);
 
@@ -1564,7 +1710,7 @@
                 });
 
                 // If typed text doesn't exactly match any genre, show "Add custom" option
-                if (filter && !GENRE_LIST.some(g => g.toLowerCase() === lf) && !selectedGenres.some(g => g.toLowerCase() === lf)) {
+                if (filter && !genreCandidates().some(g => g.toLowerCase() === lf) && !selectedGenres.some(g => g.toLowerCase() === lf)) {
                     const custom = document.createElement('div');
                     custom.className = 'genre-item';
                     custom.textContent = filter; // Use textContent for consistency in navigation
@@ -1851,8 +1997,9 @@
                     }
 
                     els.preview.style.display = 'flex';
-                    els.optionsPanel.style.display = 'flex';
+                    els.optionsPanel.style.display = 'grid';
                     els.searchBtn.style.display = 'none';
+                    document.querySelector('.container').classList.add('expanded');
 
                     initRangeSlider(data.duration);
                     updateFilenamePreview();
@@ -1911,14 +2058,14 @@
                     els.normalizeToggle.checked = false;
                     els.eqToggle.checked = false;
                     els.mbcToggle.checked = false;
-                    els.enhanceToggle.checked = false;
+                    els.enhanceModeSelect.value = '';
                     els.trimSilenceToggle.checked = false;
                 }
                 stopPlayback();
             });
 
             // Effect changes reset playback
-            [els.normalizeToggle, els.normalizeISelect, els.eqToggle, els.eqPresetSelect, els.mbcToggle, els.mbcPresetSelect, els.enhanceToggle, els.enhanceIntensitySelect, els.trimSilenceToggle, els.silenceThreshSelect].forEach(el => {
+            [els.normalizeToggle, els.normalizeISelect, els.eqToggle, els.eqPresetSelect, els.mbcToggle, els.mbcPresetSelect, els.enhanceModeSelect, els.enhanceIntensitySelect, els.trimSilenceToggle, els.silenceThreshSelect].forEach(el => {
                 if (el) el.addEventListener('change', stopPlayback);
             });
 
@@ -1957,7 +2104,7 @@
                     end_time: els.endSlider.value,
                     eq_preset: els.eqToggle && els.eqToggle.checked ? els.eqPresetSelect.value : '',
                     mbc_preset: els.mbcToggle && els.mbcToggle.checked ? els.mbcPresetSelect.value : '',
-                    enhance: els.enhanceToggle.checked,
+                    enhance_mode: els.enhanceModeSelect.value,
                     enhance_intensity: els.enhanceIntensitySelect.value,
                     normalize: els.normalizeToggle.checked,
                     normalize_i: els.normalizeISelect.value,
@@ -2066,6 +2213,8 @@
 
             // --- Process flow ---
             els.downloadBtn.addEventListener('click', async () => {
+                const dlUrl = els.urlInput.value.trim();
+                if (!dlUrl) { showError('Please enter a YouTube URL'); return; }
                 stopPlayback();
                 session_id = Math.random().toString(36).substring(7);
                 els.downloadBtn.disabled = true;
@@ -2093,7 +2242,7 @@
                     silence_thresh: els.silenceThreshSelect.value,
                     eq_preset: els.eqToggle && els.eqToggle.checked ? els.eqPresetSelect.value : '',
                     mbc_preset: els.mbcToggle && els.mbcToggle.checked ? els.mbcPresetSelect.value : '',
-                    enhance: els.enhanceToggle.checked,
+                    enhance_mode: els.enhanceModeSelect.value,
                     enhance_intensity: els.enhanceIntensitySelect.value,
                     normalize: els.normalizeToggle.checked,
                     normalize_i: els.normalizeISelect.value,
@@ -2109,14 +2258,15 @@
                 if (els.metaGenre.value.trim()) params.set('meta_genre', els.metaGenre.value.trim());
                 if (els.metaYear.value.trim()) params.set('meta_year', els.metaYear.value.trim());
 
-                // Add custom tags and thumbnail as JSON
+                // Custom tags + cover go in the POST body (a base64 image is far
+                // too large for the query string and would abort the request).
                 const metadataExtra = {};
                 const customTags = getCustomTags();
                 if (customTags.length > 0) metadataExtra.custom_tags = customTags;
                 if (customThumbnailBase64) metadataExtra.thumbnail_base64 = customThumbnailBase64;
-                if (Object.keys(metadataExtra).length > 0) {
-                    params.set('metadata_json', JSON.stringify(metadataExtra));
-                }
+                const saveBody = JSON.stringify({
+                    metadata_json: Object.keys(metadataExtra).length > 0 ? JSON.stringify(metadataExtra) : null
+                });
 
                 let downloadTriggered = false; // Prevent multiple download triggers
 
@@ -2173,7 +2323,11 @@
                 }, 500);
 
                 try {
-                    const res = await fetch(`/save?${params.toString()}`, { method: 'POST' });
+                    const res = await fetch(`/save?${params.toString()}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: saveBody
+                    });
                     if (!res.ok) throw new Error(await res.text());
                 } catch (err) {
                     showError(err.message);
@@ -2206,19 +2360,24 @@
             }
 
             function showError(msg) {
-                // Sanitize raw technical errors into friendly messages
+                msg = (msg || '').toString();
+                // Map ONLY genuine URL-validation failures to a friendly hint.
+                // Everything else (yt-dlp/ffmpeg/processing errors) is shown as-is,
+                // so real failures aren't masked as "enter a valid URL".
                 let friendly = msg;
                 if (/NetworkError|Failed to fetch|fetch resource/i.test(msg)) {
                     friendly = 'Connection error — check your network';
-                } else if (/could not parse|invalid.*url|not a valid/i.test(msg)) {
+                } else if (/non-empty string|Invalid domain|Could not extract video ID|Invalid video ID|Could not parse hostname|Failed to parse URL|not a recognized YouTube/i.test(msg)) {
                     friendly = 'Please enter a valid YouTube URL';
-                } else if (/hostname/i.test(msg)) {
-                    friendly = 'Invalid URL format';
+                } else {
+                    // Strip a leading FastAPI/HTTP wrapper if present, cap length.
+                    friendly = msg.replace(/^\s*\{?"?detail"?:?\s*"?/i, '').replace(/"?\}?\s*$/,'').trim() || msg;
+                    if (friendly.length > 220) friendly = friendly.slice(0, 217) + '…';
                 }
                 document.getElementById('errorToastMsg').textContent = friendly;
                 const toast = document.getElementById('errorToast');
                 toast.classList.add('show');
-                setTimeout(() => toast.classList.remove('show'), 5000);
+                setTimeout(() => toast.classList.remove('show'), 7000);
             }
 
             function showToast(path) {
