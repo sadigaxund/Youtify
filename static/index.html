@@ -673,8 +673,24 @@
             width: 0%;
             height: 100%;
             background: linear-gradient(90deg, var(--primary), #ff6090);
-            transition: width 0.4s ease;
+            transition: width 0.25s ease;
             border-radius: 2px;
+        }
+
+        .pipeline-status {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+
+        .pipeline-status #pipelinePct {
+            color: var(--primary);
+            font-variant-numeric: tabular-nums;
         }
 
         @keyframes spin {
@@ -959,7 +975,7 @@
                             </div>
                         </div>
                         <div class="grid-item">
-                            <label>Stereo Widening</label>
+                            <label title="Regenerates high-frequency detail lost to YouTube's lossy compression (aexciter + gentle high shelf). Subtle, mono-safe — keeps the original feel.">Clarity (Restore)</label>
                             <div style="display:flex; gap:0.4rem; align-items:center;">
                                 <label class="mini-toggle">
                                     <input type="checkbox" id="enhanceToggle">
@@ -1116,6 +1132,10 @@
                         <div class="pipeline-bar">
                             <div id="pipelineFill" class="pipeline-fill"></div>
                         </div>
+                        <div class="pipeline-status">
+                            <span id="pipelineLabel">Preparing…</span>
+                            <span id="pipelinePct">0%</span>
+                        </div>
                     </div>
                 </div>
 
@@ -1247,6 +1267,8 @@
                 // Pipeline progress elements
                 pipelineProgress: document.getElementById('pipelineProgress'),
                 pipelineFill: document.getElementById('pipelineFill'),
+                pipelineLabel: document.getElementById('pipelineLabel'),
+                pipelinePct: document.getElementById('pipelinePct'),
                 stepCache: document.getElementById('stepCache'),
                 stepCacheIcon: document.getElementById('stepCacheIcon'),
                 stepCacheLabel: document.getElementById('stepCacheLabel'),
@@ -1301,9 +1323,18 @@
                 lucide.createIcons({ nodes: [iconEl] });
             }
 
+            // Sets the bar width + numeric % + status label in one place.
+            // The bar is split 0-50% = cache phase, 50-100% = process phase.
+            function setPipelineProgress(barPct, label) {
+                barPct = Math.max(0, Math.min(100, barPct));
+                els.pipelineFill.style.width = barPct + '%';
+                els.pipelinePct.textContent = Math.round(barPct) + '%';
+                if (label !== undefined) els.pipelineLabel.textContent = label;
+            }
+
             function showPipeline() {
                 els.pipelineProgress.style.display = 'flex';
-                els.pipelineFill.style.width = '0%';
+                setPipelineProgress(0, 'Preparing…');
                 setPipelineStep('cache', 'idle');
                 setPipelineStep('process', 'idle');
                 els.pipelineConnector.classList.remove('done');
@@ -1318,22 +1349,26 @@
                 if (cachePollTimer) clearInterval(cachePollTimer);
                 showPipeline();
                 setPipelineStep('cache', 'active');
-                els.pipelineFill.style.width = '15%';
+                setPipelineProgress(2, 'Caching audio…');
 
                 cachePollTimer = setInterval(async () => {
                     try {
                         const res = await fetch(`/cache-status?url=${encodeURIComponent(url)}`);
                         const data = await res.json();
+                        // Map cache download 0-100% onto the first half of the bar.
+                        if (!data.cached) {
+                            setPipelineProgress((data.progress || 0) * 0.5, 'Caching audio…');
+                        }
                         if (data.cached) {
                             isCached = true;
                             clearInterval(cachePollTimer);
                             cachePollTimer = null;
                             setPipelineStep('cache', 'done');
                             els.pipelineConnector.classList.add('done');
-                            els.pipelineFill.style.width = '50%';
+                            setPipelineProgress(50, 'Cached — ready');
                         }
                     } catch (e) { /* silently retry */ }
-                }, 1500);
+                }, 600);
             }
 
             // --- Thumbnail Upload/Reset ---
@@ -2036,19 +2071,19 @@
                 els.downloadBtn.disabled = true;
                 els.success.style.display = 'none';
 
-                // Show pipeline progress and activate processing step
+                // Show pipeline progress
                 showPipeline();
                 if (isCached) {
                     // Cache already done from search
                     setPipelineStep('cache', 'done');
                     els.pipelineConnector.classList.add('done');
-                    els.pipelineFill.style.width = '50%';
+                    setPipelineProgress(50, 'Processing audio…');
+                    setPipelineStep('process', 'active');
                 } else {
                     // Cache still in progress
                     setPipelineStep('cache', 'active');
-                    els.pipelineFill.style.width = '15%';
+                    setPipelineProgress(2, 'Caching audio…');
                 }
-                setPipelineStep('process', 'active');
 
                 const params = new URLSearchParams({
                     url: els.urlInput.value.trim(),
@@ -2090,23 +2125,19 @@
                         const res = await fetch(`/progress/${session_id}`);
                         const data = await res.json();
 
-                        // Also poll cache status during download if not yet cached
-                        if (!isCached) {
-                            try {
-                                const cres = await fetch(`/cache-status?url=${encodeURIComponent(els.urlInput.value.trim())}`);
-                                const cdata = await cres.json();
-                                if (cdata.cached) {
-                                    isCached = true;
-                                    setPipelineStep('cache', 'done');
-                                    els.pipelineConnector.classList.add('done');
-                                }
-                            } catch (e) { }
-                        }
-
-                        if (data.status === 'downloading' || data.status === 'processing') {
-                            // Map backend progress (0-100) to pipeline bar (50-100)
-                            const pipelinePct = isCached ? 50 + (data.progress * 0.5) : 25 + (data.progress * 0.25);
-                            els.pipelineFill.style.width = `${pipelinePct}%`;
+                        if (data.status === 'caching') {
+                            // Cache phase: map 0-100 onto the first half of the bar.
+                            setPipelineStep('cache', 'active');
+                            setPipelineProgress((data.progress || 0) * 0.5, `Caching audio… ${Math.round(data.progress || 0)}%`);
+                        } else if (data.status === 'processing') {
+                            // Cache finished, processing phase: second half of the bar.
+                            if (!isCached) {
+                                isCached = true;
+                                setPipelineStep('cache', 'done');
+                                els.pipelineConnector.classList.add('done');
+                            }
+                            setPipelineStep('process', 'active');
+                            setPipelineProgress(50 + (data.progress || 0) * 0.5, `Processing audio… ${Math.round(data.progress || 0)}%`);
                         } else if (data.status === 'finished' && !downloadTriggered) {
                             downloadTriggered = true;
                             clearInterval(poll);
@@ -2116,7 +2147,7 @@
                             setPipelineStep('cache', 'done');
                             setPipelineStep('process', 'done');
                             els.pipelineConnector.classList.add('done');
-                            els.pipelineFill.style.width = '100%';
+                            setPipelineProgress(100, 'Done');
 
                             // Check if browser download mode
                             if (data.browser_download && data.path) {
@@ -2139,7 +2170,7 @@
                             hidePipeline();
                         }
                     } catch (e) { }
-                }, 1000);
+                }, 500);
 
                 try {
                     const res = await fetch(`/save?${params.toString()}`, { method: 'POST' });

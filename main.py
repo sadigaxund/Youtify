@@ -10,6 +10,7 @@ from typing import Optional, Dict
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
 
@@ -22,9 +23,20 @@ app = FastAPI(
     version="1.2.1"
 )
 
+# CORS: Allow Chrome extension and other origins to access the API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Store progress in-memory (simple session-based)
 # In a production app, use Redis or similar
+#   download_progress: keyed by session_id, tracks the /save job (cache + process phases)
+#   cache_progress:    keyed by video_id, tracks background pre-caching from /search
 download_progress: Dict[str, dict] = {}
+cache_progress: Dict[str, dict] = {}
 
 # Handle Configuration (CLI > ENV > DEFAULT)
 def get_config():
@@ -109,26 +121,30 @@ def get_unique_path(directory: str, filename: str) -> str:
         counter += 1
     return path
 
-def progress_hook_factory(session_id: str):
-    def progress_hook(d):
-        if d['status'] == 'downloading':
-            p = d.get('_percent_str', '0%').replace('%', '')
-            try:
-                download_progress[session_id] = {
-                    "status": "downloading",
-                    "progress": float(p),
-                    "speed": d.get('_speed_str', 'N/A'),
-                    "eta": d.get('_eta_str', 'N/A')
-                }
-            except ValueError:
-                pass
-        elif d['status'] == 'finished':
-            download_progress[session_id] = {
-                "status": "processing",
-                "progress": 100,
-                "message": "Converting to MP3..."
-            }
-    return progress_hook
+def precache_with_progress(url: str):
+    """
+    Background task launched by /search: downloads bestaudio into the cache
+    while recording real-time progress in cache_progress[video_id], so the UI
+    can show a live caching bar instead of a binary 'cached / not cached'.
+    """
+    from youtube_downloader import download_to_cache
+    try:
+        video_id = validate_youtube_url(url)
+    except Exception:
+        return
+    cache_progress[video_id] = {"status": "caching", "progress": 0.0}
+
+    def cb(pct):
+        cache_progress[video_id] = {
+            "status": "done" if pct >= 100 else "caching",
+            "progress": round(pct, 1),
+        }
+
+    try:
+        download_to_cache(url, CACHE_DIR, progress_cb=cb)
+        cache_progress[video_id] = {"status": "done", "progress": 100.0}
+    except Exception as e:
+        cache_progress[video_id] = {"status": "error", "progress": 0.0, "message": str(e)}
 
 @app.get("/")
 async def serve_ui():
@@ -151,7 +167,7 @@ async def get_config_endpoint():
     }
 
 @app.get("/info")
-async def video_info(url: str = Query(..., description="The YouTube URL")):
+def video_info(url: str = Query(..., description="The YouTube URL")):
     """Get metadata for a video"""
     try:
         info = get_video_info(url)
@@ -166,30 +182,30 @@ async def get_progress(session_id: str):
 
 
 @app.get("/search")
-async def search_video(
+def search_video(
     background_tasks: BackgroundTasks,
     url: str = Query(..., description="The YouTube URL to search")
 ):
     """
     Validates URL, extracts info, and triggers pre-caching in the background.
     """
-    from youtube_downloader import download_to_cache
     try:
         # 1. Validate
         video_id = validate_youtube_url(url)
-        
+
         # 2. Get Info (Speedy metadata extraction)
         info = get_video_info(url)
-        
+
         # 3. Limit check (30 minutes = 1800 seconds)
         if info.get('duration', 0) > 1800:
             info['can_preview'] = False
             info['limit_reason'] = "Video longer than 30 minutes. Preview disabled for performance."
         else:
             info['can_preview'] = True
-            # Trigger Cache Download in Background
-            background_tasks.add_task(download_to_cache, url, CACHE_DIR)
-        
+        # Pre-cache in the background regardless of preview limit, so a later
+        # /save can reuse it (the only gate is whether we *stream* a preview).
+        background_tasks.add_task(precache_with_progress, url)
+
         background_tasks.add_task(cleanup_cache)
         
         # Pass upload_date to frontend for year pre-population
@@ -212,7 +228,7 @@ async def search_video(
 
 
 @app.post("/save")
-async def save_audio(
+def save_audio(
     background_tasks: BackgroundTasks,
     url: str = Query(..., description="The YouTube URL to download audio from"),
     start_time: Optional[float] = Query(None, description="Start time in seconds"),
@@ -247,9 +263,17 @@ async def save_audio(
         if not session_id:
             session_id = uuid.uuid4().hex[:8]
         
-        download_progress[session_id] = {"status": "starting", "progress": 0}
-        hook = progress_hook_factory(session_id)
-        
+        download_progress[session_id] = {"status": "starting", "phase": "cache", "progress": 0}
+
+        # Unified progress: the downloader reports (phase, percent) for both the
+        # cache download and the single FFmpeg processing pass.
+        def on_progress(phase: str, percent: float):
+            download_progress[session_id] = {
+                "status": "caching" if phase == "cache" else "processing",
+                "phase": phase,
+                "progress": round(percent, 1),
+            }
+
         # 3. Generate filename from metadata
         # Pattern: "Title (Album) - Artist (Composer).mp3"
         def sanitize(s):
@@ -341,8 +365,9 @@ async def save_audio(
             normalize=False if original else normalize,
             normalize_i=normalize_i,
             original=original,
-            progress_hook=hook,
-            user_metadata=user_metadata if user_metadata else None
+            user_metadata=user_metadata if user_metadata else None,
+            cache_dir=CACHE_DIR,
+            on_progress=on_progress,
         )
         
         # 7. Final progress update
@@ -421,7 +446,7 @@ async def download_file(
     )
 
 @app.get("/stream")
-async def stream_audio(
+def stream_audio(
     url: str = Query(..., description="The YouTube URL to stream"),
     start_time: Optional[float] = Query(None),
     end_time: Optional[float] = Query(None),
@@ -496,19 +521,25 @@ async def stream_audio(
 
 @app.get("/cache-status")
 async def cache_status(url: str = Query(..., description="The YouTube URL to check cache for")):
-    """Check if audio is cached for this URL"""
+    """Check if audio is cached for this URL, plus live download progress."""
     import glob
     try:
         video_id = validate_youtube_url(url)
         existing = glob.glob(os.path.join(CACHE_DIR, f"{video_id}.*"))
         cached = any(os.path.getsize(f) > 1024 for f in existing if os.path.exists(f))
-        return {"cached": cached}
+        prog = cache_progress.get(video_id, {})
+        progress = 100.0 if cached else float(prog.get("progress", 0.0))
+        return {
+            "cached": cached,
+            "progress": progress,
+            "status": prog.get("status", "done" if cached else "idle"),
+        }
     except Exception:
-        return {"cached": False}
+        return {"cached": False, "progress": 0.0, "status": "idle"}
 
 
 @app.get("/silence-info")
-async def silence_info(
+def silence_info(
     url: str = Query(..., description="The YouTube URL to analyze"),
     silence_thresh: float = Query(-40.0)
 ):
