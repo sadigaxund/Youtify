@@ -37,6 +37,176 @@ def get_video_lock(video_id: str):
             _active_locks[video_id] = threading.Lock()
         return _active_locks[video_id]
 
+# ---------------------------------------------------------------------------
+# Audio processing — single shared filter chain
+#
+# Both the live preview (/stream) and the saved file (/save) build their FFmpeg
+# filter graph from build_filter_chain(). This guarantees "what you hear is what
+# you get": there is exactly ONE definition of every effect, and exactly ONE
+# lossy encode (cache source -> MP3), instead of the old 3-encode pydub pipeline.
+# ---------------------------------------------------------------------------
+
+# Corrective EQ presets (opt-in, tonal shaping). Conservative by design.
+EQ_PRESETS = {
+    'Classical':    "equalizer=f=60:width_type=o:w=1.2:g=8,equalizer=f=12000:width_type=o:w=1.2:g=6",
+    'Electronic':   "equalizer=f=50:width_type=o:w=1.0:g=10,equalizer=f=15000:width_type=o:w=1.0:g=8",
+    'Podcast':      "equalizer=f=200:width_type=o:w=2:g=-6,equalizer=f=3000:width_type=o:w=1:g=8",
+    'Bass Boost':   "equalizer=f=60:width_type=o:w=1:g=10",
+    'Treble Boost': "equalizer=f=12000:width_type=o:w=1:g=10",
+    'Rock':         "equalizer=f=100:width_type=o:w=1:g=6,equalizer=f=1000:width_type=o:w=1:g=-4,equalizer=f=10000:width_type=o:w=1:g=6",
+    'Pop':          "equalizer=f=100:width_type=o:w=1:g=-2,equalizer=f=1000:width_type=o:w=1:g=4,equalizer=f=10000:width_type=o:w=1:g=-2",
+    'Jazz':         "equalizer=f=100:width_type=o:w=1:g=5,equalizer=f=1000:width_type=o:w=1:g=-2,equalizer=f=10000:width_type=o:w=1:g=3",
+    'Acoustic':     "equalizer=f=100:width_type=o:w=1:g=3,equalizer=f=1000:width_type=o:w=1:g=2,equalizer=f=10000:width_type=o:w=1:g=5",
+    'Lo-Fi':        "equalizer=f=200:width_type=o:w=1:g=-6,equalizer=f=8000:width_type=o:w=1:g=-6,lowpass=f=10000,highpass=f=200",
+}
+
+# Dynamic-range compression presets (compand: portable, no extra deps).
+MBC_PRESETS = {
+    'Smooth':    "compand=attacks=0.3:points=-80/-80|-45/-25|-27/-15|0/-6:gain=3",
+    'Punchy':    "compand=attacks=0.1:points=-80/-80|-50/-30|-30/-15|0/-8:gain=5",
+    'Broadcast': "compand=attacks=0.05:points=-80/-80|-55/-35|-35/-15|-10/-5|0/-3:gain=6",
+}
+
+
+def build_enhance_filter(intensity: float = 1.5) -> str:
+    """
+    Subtle "restore / clarity" effect.
+
+    YouTube audio is lossy AAC: psychoacoustic encoding throws away high-frequency
+    detail, leaving the top end dull. Rather than the old crystalizer+extrastereo
+    (which sharpens harshly and can introduce phase issues), this regenerates the
+    lost upper harmonics with aexciter and adds a gentle high shelf for "air".
+    Mono-safe, no stereo widening — the original feel is preserved.
+    """
+    # Map UI intensity (1.0 / 1.5 / 2.0 -> Low / Mid / High) to gentle values.
+    amount = {1.0: 2.0, 1.5: 3.0, 2.0: 4.5}.get(round(intensity, 1), 3.0)
+    shelf_g = {1.0: 1.5, 1.5: 2.5, 2.0: 3.5}.get(round(intensity, 1), 2.5)
+    return (
+        f"aexciter=level_in=1:level_out=1:amount={amount}:drive=8.5:blend=0:freq=7000:ceil=16000,"
+        f"highshelf=g={shelf_g}:f=10000"
+    )
+
+
+def build_filter_chain(
+    start_time: Optional[float] = None,
+    end_time: Optional[float] = None,
+    eq_preset: Optional[str] = None,
+    mbc_preset: Optional[str] = None,
+    enhance: bool = False,
+    enhance_intensity: float = 1.5,
+    normalize: bool = True,
+    normalize_i: float = -16.0,
+    original: bool = False,
+    trim_silence: bool = False,
+    silence_thresh: float = -40.0,
+    include_range: bool = True,
+) -> list:
+    """
+    Builds the ordered list of FFmpeg `-af` filters for a given set of effects.
+    Used by BOTH preview streaming and final save so they are always identical.
+
+    Order matters: range clip -> silence trim -> EQ -> compression -> restore ->
+    loudness (last, so the limiter sees the fully processed signal).
+    """
+    filters = []
+
+    # 1. Range clip first — so normalization analyses only the kept audio.
+    if include_range and (start_time is not None or end_time is not None):
+        t_start = start_time if start_time else 0
+        t_end = f":end={end_time}" if end_time else ""
+        filters.append(f"atrim=start={t_start}{t_end},asetpts=PTS-STARTPTS")
+
+    # "Original" bypasses all tonal/dynamic processing (range clip still applies).
+    if original:
+        return filters
+
+    # 2. Leading-silence removal (streamable; trailing is handled by the range
+    #    end, which the UI snaps to the detected silence boundary).
+    if trim_silence:
+        filters.append(
+            f"silenceremove=start_periods=1:start_threshold={silence_thresh}dB:detection=peak"
+        )
+
+    # 3. Corrective EQ
+    if eq_preset and eq_preset in EQ_PRESETS:
+        filters.append(EQ_PRESETS[eq_preset])
+
+    # 4. Dynamic-range compression
+    if mbc_preset and mbc_preset in MBC_PRESETS:
+        filters.append(MBC_PRESETS[mbc_preset])
+
+    # 5. Restore / clarity (subtle high-frequency regeneration)
+    if enhance:
+        filters.append(build_enhance_filter(enhance_intensity))
+
+    # 6. Loudness normalization + true-peak limiter (final stage)
+    if normalize:
+        filters.append(f"loudnorm=I={normalize_i}:LRA=11:TP=-1.5")
+
+    return filters
+
+
+def get_audio_duration(path: str) -> Optional[float]:
+    """Returns audio duration in seconds via ffprobe, or None on failure."""
+    import subprocess
+    try:
+        out = subprocess.run(
+            ['ffprobe', '-v', 'quiet', '-show_entries', 'format=duration',
+             '-of', 'default=noprint_wrappers=1:nokey=1', path],
+            capture_output=True, text=True, timeout=15
+        )
+        return float(out.stdout.strip())
+    except Exception:
+        return None
+
+
+def process_audio(
+    input_path: str,
+    output_path: str,
+    total_duration: Optional[float] = None,
+    progress_cb: Optional[callable] = None,
+    **effect_kwargs,
+) -> str:
+    """
+    Single-pass FFmpeg encode: cache source -> processed MP3 (320k).
+
+    Replaces the old multi-encode pipeline (yt-dlp mp3 + pydub trim + ffmpeg fx),
+    so there is exactly one lossy stage. Streams FFmpeg's `-progress` output and
+    reports 0-100 via progress_cb for real-time UI updates.
+    """
+    import subprocess
+
+    filters = build_filter_chain(**effect_kwargs)
+    cmd = ['ffmpeg', '-y', '-i', input_path]
+    if filters:
+        cmd.extend(['-af', ",".join(filters)])
+    cmd.extend([
+        '-map', 'a',
+        '-ar', '44100', '-b:a', '320k',
+        '-progress', 'pipe:1', '-nostats',
+        output_path,
+    ])
+
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        for line in proc.stdout:
+            line = line.strip()
+            if line.startswith('out_time_us=') and total_duration and progress_cb:
+                raw = line.split('=', 1)[1]
+                if raw.isdigit():
+                    pct = min(99.0, (int(raw) / 1_000_000.0) / total_duration * 100.0)
+                    progress_cb(pct)
+            elif line == 'progress=end' and progress_cb:
+                progress_cb(100.0)
+    finally:
+        proc.wait()
+
+    if proc.returncode != 0:
+        err = proc.stderr.read() if proc.stderr else ''
+        raise RuntimeError(f"FFmpeg processing failed: {err[-500:]}")
+    return output_path
+
+
 def validate_youtube_url(url: str) -> Optional[str]:
     """
     Validates that a URL is a legitimate YouTube URL and extracts the video ID.
@@ -179,251 +349,123 @@ def download_youtube_audio(
     normalize: bool = True,
     normalize_i: float = -16.0,
     original: bool = False,
-    progress_hook: Optional[callable] = None,
-    user_metadata: Optional[dict] = None
+    user_metadata: Optional[dict] = None,
+    cache_dir: Optional[str] = None,
+    on_progress: Optional[callable] = None,
 ) -> str:
     """
-    Downloads audio from a YouTube video in the highest quality and saves it as MP3.
-    
-    Args:
-        url: The YouTube video URL
-        output_dir: Directory to save the MP3 file (default: current directory)
-        filename: Optional custom filename (without extension). If not provided,
-                  uses the video title.
-                  
-    Returns:
-        The path to the downloaded MP3 file
-        
-    Raises:
-        ValueError: If the URL is invalid
-        RuntimeError: If the download fails
-    """
-    # Validate the URL first
-    video_id = validate_youtube_url(url)
-    
-    # Ensure output directory exists
-    output_dir = os.path.abspath(output_dir)
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # Configure yt-dlp options for highest quality audio
-    ydl_opts = {
-        # Extract audio only - prioritize M4A/AAC for better container stability/compatibility
-        'format': 'bestaudio[ext=m4a]/bestaudio/best',
-        
-        # Post-processing: only convert to MP3, no metadata/thumbnail embedding
-        'postprocessors': [
-            {
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '320',  # Highest MP3 quality (320 kbps)
-            },
-        ],
-        
-        # Output template
-        'outtmpl': os.path.join(
-            output_dir,
-            filename if filename else '%(title)s'
-        ) + '.%(ext)s',
-        
-        # Print to stdout for terminal progress
-        'quiet': False,
-        'no_warnings': True,
-        
-        # Prevent downloading playlists
-        'noplaylist': True,
-        
-        # Progress hook
-        'progress_hooks': [progress_hook] if progress_hook else [],
-    }
-    
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Extract info first to get the final filename
-            info = ydl.extract_info(url, download=True)
-            
-            # Construct the output path
-            if filename:
-                output_path = os.path.join(output_dir, f"{filename}.mp3")
-            else:
-                # Use the sanitized title from yt-dlp
-                title = ydl.prepare_filename(info)
-                # Replace the original extension with .mp3
-                output_path = os.path.splitext(title)[0] + '.mp3'
-            
-            # Log the actual source bitrate to verify quality
-            source_abr = info.get('abr')
-            if source_abr:
-                print(f"Source audio bitrate: {source_abr}kbps")
-            else:
-                print("Could not determine source bitrate.")
-            
-            if not os.path.exists(output_path):
-                # Try to find the file (yt-dlp might have sanitized the filename)
-                for f in os.listdir(output_dir):
-                    if f.endswith('.mp3') and (video_id in f or info.get('title', '') in f):
-                        output_path = os.path.join(output_dir, f)
-                        break
-            
-            # Trim to time range if specified (fast local operation using stream copy)
-            if os.path.exists(output_path) and (start_time is not None or end_time is not None):
-                try:
-                    output_path = trim_audio_range(output_path, start_time, end_time)
-                    print(f"Trimmed to range: {start_time or 0}s - {end_time or 'end'}s")
-                except Exception as e:
-                    print(f"Warning: Range trimming failed: {str(e)}")
-            
-            # Apply silence trimming if requested
-            if trim_silence_flag and os.path.exists(output_path):
-                try:
-                    start_trim, end_trim = trim_silence(output_path, silence_thresh=silence_thresh)
-                    # print(f"Trimmed {start_trim/1000:.2f}s from start, {end_trim/1000:.2f}s from end.")
-                except Exception as e:
-                    # Log error but don't fail the download
-                    print(f"Warning: Silence trimming failed: {str(e)}")
-            
-            # Apply advanced audio processing (Normalization, EQ, Enhancement)
-            if os.path.exists(output_path) and not original:
-                try:
-                    apply_audio_processing(
-                        output_path, 
-                        normalize=normalize, 
-                        normalize_i=normalize_i,
-                        eq_preset=eq_preset, 
-                        mbc_preset=mbc_preset,
-                        enhance=enhance,
-                        enhance_intensity=enhance_intensity
-                    )
-                except Exception as e:
-                    print(f"Warning: Audio processing failed: {str(e)}")
-            
-            # Embed custom metadata (source URL and processing info)
-            if os.path.exists(output_path):
-                # Download YouTube thumbnail if no custom thumbnail provided
-                if not user_metadata.get('thumbnail_base64') and info.get('thumbnail'):
-                    try:
-                        import urllib.request
-                        thumbnail_url = info['thumbnail']
-                        print(f"Downloading thumbnail from: {thumbnail_url}")
-                        with urllib.request.urlopen(thumbnail_url, timeout=10) as response:
-                            thumbnail_data = response.read()
-                            if not user_metadata:
-                                user_metadata = {}
-                            user_metadata['youtube_thumbnail_data'] = thumbnail_data
-                            print(f"Downloaded thumbnail: {len(thumbnail_data)} bytes")
-                    except Exception as e:
-                        print(f"Warning: Could not download YouTube thumbnail: {e}")
-                
-                try:
-                    embed_custom_metadata(
-                        output_path,
-                        source_url=url,
-                        eq_preset=eq_preset if not original else None,
-                        mbc_preset=mbc_preset if not original else None,
-                        normalize=normalize if not original else False,
-                        normalize_i=normalize_i,
-                        enhance=enhance if not original else False,
-                        trim_silence=trim_silence_flag if not original else False,
-                        original=original,
-                        thumbnail_path=None,  # No longer using file path
-                        user_metadata=user_metadata
-                    )
-                except Exception as e:
-                    print(f"Warning: Metadata embedding failed: {str(e)}")
-            
-            return output_path
-            
-    except yt_dlp.DownloadError as e:
-        raise RuntimeError(f"Failed to download audio: {str(e)}")
-    except Exception as e:
-        raise RuntimeError(f"Unexpected error during download: {str(e)}")
+    Produces a processed MP3 from a YouTube URL using the unified pipeline:
 
+        1. Ensure bestaudio is in the cache (download once, reuse across preview/save).
+        2. Single FFmpeg pass: cache source -> effects -> 320k MP3 (one lossy encode).
+        3. Embed ID3 metadata + cover art.
 
-def trim_audio_range(audio_path: str, start_time: Optional[float] = None, end_time: Optional[float] = None) -> str:
-    """
-    Trims an audio file to the specified time range using ffmpeg stream copy.
-    This is nearly instant since no re-encoding is needed.
-    Replaces the original file with the trimmed version.
-    
     Args:
-        audio_path: Path to the audio file
-        start_time: Start time in seconds (None = from beginning)
-        end_time: End time in seconds (None = to end)
-    
+        cache_dir: where bestaudio is cached. Defaults to a temp dir.
+        on_progress: optional callback(phase, percent) where phase is
+                     'cache' or 'process' and percent is 0-100.
+
     Returns:
-        The path to the trimmed file (same as input)
+        Path to the finished MP3.
     """
     import subprocess
-    import tempfile
-    
-    temp_fd, temp_path = tempfile.mkstemp(suffix='.mp3')
-    os.close(temp_fd)
-    
+
+    validate_youtube_url(url)
+
+    output_dir = os.path.abspath(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
+    if cache_dir is None:
+        import tempfile
+        cache_dir = os.path.join(tempfile.gettempdir(), "yt2mp3_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    def _phase(name):
+        return (lambda p: on_progress(name, p)) if on_progress else None
+
+    user_metadata = user_metadata or {}
+
+    # 1. Ensure bestaudio is cached (reuses an existing cache file if present).
     try:
-        cmd = ['ffmpeg', '-y', '-i', audio_path]
-        
-        # Add time range flags (before output for fast seeking)
-        if start_time is not None and start_time > 0:
-            cmd.extend(['-ss', str(float(start_time))])
-        if end_time is not None:
-            if start_time is not None and start_time > 0:
-                # Use -t (duration) since -ss shifts the timeline
-                duration = float(end_time) - float(start_time)
-                cmd.extend(['-t', str(duration)])
-            else:
-                cmd.extend(['-to', str(float(end_time))])
-        
-        # Stream copy — no re-encoding, nearly instant
-        cmd.extend(['-c', 'copy', temp_path])
-        
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode == 0:
-            os.replace(temp_path, audio_path)
-        else:
-            print(f"FFmpeg trim failed: {result.stderr}")
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-    except Exception as e:
-        print(f"Error trimming audio: {e}")
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-    
-    return audio_path
+        cache_file = download_to_cache(url, cache_dir, progress_cb=_phase('cache'))
+    except yt_dlp.DownloadError as e:
+        raise RuntimeError(f"Failed to download audio: {str(e)}")
+    if _phase('cache'):
+        _phase('cache')(100.0)
+
+    output_path = os.path.join(output_dir, f"{filename}.mp3")
+
+    # Duration of the processed clip (for accurate progress %).
+    src_duration = get_audio_duration(cache_file)
+    if start_time is not None or end_time is not None:
+        clip_end = end_time if end_time is not None else (src_duration or 0)
+        total_duration = max(0.0, clip_end - (start_time or 0)) or None
+    else:
+        total_duration = src_duration
+
+    # 2. Single processing pass (cache -> processed MP3).
+    process_audio(
+        cache_file,
+        output_path,
+        total_duration=total_duration,
+        progress_cb=_phase('process'),
+        start_time=start_time,
+        end_time=end_time,
+        eq_preset=eq_preset,
+        mbc_preset=mbc_preset,
+        enhance=enhance,
+        enhance_intensity=enhance_intensity,
+        normalize=normalize,
+        normalize_i=normalize_i,
+        original=original,
+        trim_silence=trim_silence_flag,
+        silence_thresh=silence_thresh,
+    )
+
+    # 3. Metadata + cover art.
+    if os.path.exists(output_path):
+        # Fetch YouTube thumbnail only if the user did not upload a custom cover.
+        if not user_metadata.get('thumbnail_base64'):
+            try:
+                info = get_video_info(url)
+                if info.get('thumbnail'):
+                    import urllib.request
+                    with urllib.request.urlopen(info['thumbnail'], timeout=10) as response:
+                        user_metadata['youtube_thumbnail_data'] = response.read()
+            except Exception as e:
+                print(f"Warning: Could not download YouTube thumbnail: {e}")
+
+        try:
+            embed_custom_metadata(
+                output_path,
+                source_url=url,
+                eq_preset=eq_preset if not original else None,
+                mbc_preset=mbc_preset if not original else None,
+                normalize=normalize if not original else False,
+                normalize_i=normalize_i,
+                enhance=enhance if not original else False,
+                trim_silence=trim_silence_flag if not original else False,
+                original=original,
+                thumbnail_path=None,
+                user_metadata=user_metadata,
+            )
+        except Exception as e:
+            print(f"Warning: Metadata embedding failed: {str(e)}")
+
+    return output_path
 
 
 def detect_leading_silence(audio, silence_threshold=-40.0, chunk_size=1):
     """
     Detect leading silence in milliseconds with finer granularity.
+    Used only for silence ANALYSIS (drawing the UI overlay / snapping the
+    range slider) — never for re-encoding the audio.
     """
     trim_ms = 0
     # Process in chunks of 1ms for max precision
     while trim_ms < len(audio) and audio[trim_ms:trim_ms+chunk_size].dBFS < silence_threshold:
         trim_ms += chunk_size
     return trim_ms
-
-
-def trim_silence(audio_path, silence_thresh=-40.0):
-    """
-    Trims leading and trailing silence from an audio file.
-    
-    NOTE: This uses pydub which involves a transcode (MP3 -> PCM -> MP3).
-    At 320kbps, this quality loss is minimal but present.
-    """
-    from pydub import AudioSegment
-    audio = AudioSegment.from_file(audio_path)
-    
-    start_trim = detect_leading_silence(audio, silence_threshold=silence_thresh)
-    end_trim = detect_leading_silence(audio.reverse(), silence_threshold=silence_thresh)
-    
-    duration = len(audio)
-    # Ensure we don't trim everything if the whole file is silent
-    if start_trim + end_trim >= duration:
-        return 0, 0
-        
-    trimmed_audio = audio[start_trim:duration-end_trim]
-    
-    # Export back to the same path
-    trimmed_audio.export(audio_path, format="mp3", bitrate="320k")
-    return start_trim, end_trim
 
 
 def get_silence_offsets(audio_path: str, silence_thresh: float = -40.0):
@@ -587,101 +629,14 @@ def embed_custom_metadata(
     except Exception as e:
         print(f"Error embedding metadata with mutagen: {e}")
 
-def apply_audio_processing(
-    audio_path: str, 
-    normalize: bool = True, 
-    normalize_i: float = -16.0,
-    eq_preset: Optional[str] = None, 
-    mbc_preset: Optional[str] = None,
-    enhance: bool = False,
-    enhance_intensity: float = 1.5
-):
+
+def download_to_cache(url: str, cache_dir: str, progress_cb: Optional[callable] = None) -> str:
     """
-    Applies loudness normalization, EQ, and enhancement using ffmpeg.
-    """
-    import subprocess
-    
-    if not any([normalize, eq_preset, enhance]):
-        return
-
-    temp_path = audio_path + ".proc.mp3"
-    filters = []
-
-    # 1. Corrective EQ (Set first to clean up frequencies)
-    if eq_preset and eq_preset != 'None' and eq_preset != '':
-        if eq_preset == 'Classical':
-            filters.append("equalizer=f=60:width_type=o:w=1.2:g=8,equalizer=f=12000:width_type=o:w=1.2:g=6")
-        elif eq_preset == 'Electronic':
-            filters.append("equalizer=f=50:width_type=o:w=1.0:g=10,equalizer=f=15000:width_type=o:w=1.0:g=8")
-        elif eq_preset == 'Podcast':
-            filters.append("equalizer=f=200:width_type=o:w=2:g=-6,equalizer=f=3000:width_type=o:w=1:g=8")
-        elif eq_preset == 'Bass Boost':
-            filters.append("equalizer=f=60:width_type=o:w=1:g=10")
-        elif eq_preset == 'Treble Boost':
-            filters.append("equalizer=f=12000:width_type=o:w=1:g=10")
-        elif eq_preset == 'Rock':
-            filters.append("equalizer=f=100:width_type=o:w=1:g=6,equalizer=f=1000:width_type=o:w=1:g=-4,equalizer=f=10000:width_type=o:w=1:g=6")
-        elif eq_preset == 'Pop':
-            filters.append("equalizer=f=100:width_type=o:w=1:g=-2,equalizer=f=1000:width_type=o:w=1:g=4,equalizer=f=10000:width_type=o:w=1:g=-2")
-        elif eq_preset == 'Jazz':
-            filters.append("equalizer=f=100:width_type=o:w=1:g=5,equalizer=f=1000:width_type=o:w=1:g=-2,equalizer=f=10000:width_type=o:w=1:g=3")
-        elif eq_preset == 'Acoustic':
-            filters.append("equalizer=f=100:width_type=o:w=1:g=3,equalizer=f=1000:width_type=o:w=1:g=2,equalizer=f=10000:width_type=o:w=1:g=5")
-        elif eq_preset == 'Lo-Fi':
-            filters.append("equalizer=f=200:width_type=o:w=1:g=-6,equalizer=f=8000:width_type=o:w=1:g=-6,lowpass=f=10000,highpass=f=200")
-
-    # 2. Multiband Compression (using compand for better compatibility)
-    if mbc_preset and mbc_preset != 'None' and mbc_preset != '':
-        if mbc_preset == 'Smooth':
-            # Gentle compression for subtle leveling
-            filters.append("compand=attacks=0.3:points=-80/-80|-45/-25|-27/-15|0/-6:gain=3")
-        elif mbc_preset == 'Punchy':
-            # More aggressive compression for punch
-            filters.append("compand=attacks=0.1:points=-80/-80|-50/-30|-30/-15|0/-8:gain=5")
-        elif mbc_preset == 'Broadcast':
-            # Heavy compression for consistent loudness
-            filters.append("compand=attacks=0.05:points=-80/-80|-55/-35|-35/-15|-10/-5|0/-3:gain=6")
-
-    # 3. Stereo Enhancement (High-end only, avoid phase issues in low)
-    if enhance:
-        # Focusing on harmonics and clarity (Crystalizer) + subtle widening
-        # extrastereo is moved after compression to widen a more controlled signal
-        filters.append(f"crystalizer=i={(enhance_intensity+1)},extrastereo=m={enhance_intensity}")
-
-    # 4. Loudness Normalization + Limiter (Final volume check)
-    if normalize:
-        filters.append(f"loudnorm=I={normalize_i}:LRA=11:TP=-1.5")
-
-    if not filters:
-        return
-
-    cmd = [
-        'ffmpeg', '-y', '-i', audio_path,
-        '-af', ",".join(filters),
-        '-ar', '44100', '-b:a', '320k',
-        temp_path
-    ]
-    
-    try:
-        subprocess.run(cmd, check=True, capture_output=True)
-        os.replace(temp_path, audio_path)
-        print(f"Applied: {' + '.join(filters)}")
-    except subprocess.CalledProcessError as e:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        raise RuntimeError(f"FFmpeg processing failed: {e.stderr.decode()}")
-    except Exception as e:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        raise e
-
-
-def download_to_cache(url: str, cache_dir: str) -> str:
-    """
-    Downloads raw audio to a cache directory for quick previewing.
+    Downloads raw bestaudio to a cache directory for quick previewing and reuse.
     Returns the path to the cached file.
-    Uses native format - pydub can handle most formats via ffmpeg.
     Optimized: extracts video ID from URL to check cache without API calls.
+
+    progress_cb: optional callback(percent 0-100) for real-time download progress.
     """
     import glob
     import re
@@ -712,6 +667,8 @@ def download_to_cache(url: str, cache_dir: str) -> str:
                 cache_file = existing[0]
                 # Validate existing cache file - ensure it's not an empty or tiny stub (corrupted download)
                 if os.path.exists(cache_file) and os.path.getsize(cache_file) > 1024: # > 1KB
+                    if progress_cb:
+                        progress_cb(100.0)
                     return cache_file
                 else:
                     print(f"Cache file {cache_file} is corrupted or empty. Removing.")
@@ -719,7 +676,19 @@ def download_to_cache(url: str, cache_dir: str) -> str:
                         os.remove(cache_file)
                     except:
                         pass
-        
+
+        # Translate yt-dlp progress dicts into a simple 0-100 callback.
+        def _hook(d):
+            if not progress_cb:
+                return
+            if d['status'] == 'downloading':
+                total = d.get('total_bytes') or d.get('total_bytes_estimate')
+                got = d.get('downloaded_bytes', 0)
+                if total:
+                    progress_cb(min(99.0, got / total * 100.0))
+            elif d['status'] == 'finished':
+                progress_cb(100.0)
+
         # Download in M4A format (higher compatibility with FFmpeg/Pydub containers)
         ydl_opts = {
             'format': 'bestaudio[ext=m4a]/bestaudio/best',
@@ -727,8 +696,9 @@ def download_to_cache(url: str, cache_dir: str) -> str:
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,
+            'progress_hooks': [_hook] if progress_cb else [],
         }
-        
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             return ydl.prepare_filename(info)
@@ -750,75 +720,29 @@ def get_ffmpeg_stream_args(
 ) -> list:
     """
     Generates FFmpeg arguments for streaming processed audio from a source file.
-    Optimized for faster browser buffering (no -re flag).
+    Uses the SAME build_filter_chain() as the saved file, so the preview is an
+    exact match for what gets downloaded. Optimized for fast browser buffering
+    (no -re flag).
     """
     args = ['ffmpeg', '-y', '-i', input_path]
-    
-    filters = []
 
-    # 1. Time Range Clipping (MUST BE FIRST for correct normalization analysis)
-    if start_time is not None or end_time is not None:
-        t_start = start_time if start_time else 0
-        t_end = f":end={end_time}" if end_time else ""
-        filters.append(f"atrim=start={t_start}{t_end},asetpts=PTS-STARTPTS")
-    
-    # 2. Advanced Processing (only if NOT original)
-    if not original:
-        # Silence Removal - Only remove leading silence to prevent audio artifacts
-        # Note: stop_periods=-1 was causing audio duplication/overlap
-        if trim_silence:
-            # Simple approach: just remove leading silence, let trailing be handled naturally
-            # Using detection=peak for more reliable silence detection
-            filters.append(f"silenceremove=start_periods=1:start_threshold={silence_thresh}dB:detection=peak")
-
-        # 1. Corrective EQ (Set first to clean up frequencies)
-        if eq_preset == 'Classical':
-            filters.append("equalizer=f=60:width_type=o:w=1.2:g=8,equalizer=f=12000:width_type=o:w=1.2:g=6")
-        elif eq_preset == 'Electronic':
-            filters.append("equalizer=f=50:width_type=o:w=1.0:g=10,equalizer=f=15000:width_type=o:w=1.0:g=8")
-        elif eq_preset == 'Podcast':
-            filters.append("equalizer=f=200:width_type=o:w=2:g=-6,equalizer=f=3000:width_type=o:w=1:g=8")
-        elif eq_preset == 'Bass Boost':
-            filters.append("equalizer=f=60:width_type=o:w=1:g=10")
-        elif eq_preset == 'Treble Boost':
-            filters.append("equalizer=f=12000:width_type=o:w=1:g=10")
-        elif eq_preset == 'Rock':
-            filters.append("equalizer=f=100:width_type=o:w=1:g=6,equalizer=f=1000:width_type=o:w=1:g=-4,equalizer=f=10000:width_type=o:w=1:g=6")
-        elif eq_preset == 'Pop':
-            filters.append("equalizer=f=100:width_type=o:w=1:g=-2,equalizer=f=1000:width_type=o:w=1:g=4,equalizer=f=10000:width_type=o:w=1:g=-2")
-        elif eq_preset == 'Jazz':
-            filters.append("equalizer=f=100:width_type=o:w=1:g=5,equalizer=f=1000:width_type=o:w=1:g=-2,equalizer=f=10000:width_type=o:w=1:g=3")
-        elif eq_preset == 'Acoustic':
-            filters.append("equalizer=f=100:width_type=o:w=1:g=3,equalizer=f=1000:width_type=o:w=1:g=2,equalizer=f=10000:width_type=o:w=1:g=5")
-        elif eq_preset == 'Lo-Fi':
-            filters.append("equalizer=f=200:width_type=o:w=1:g=-6,equalizer=f=8000:width_type=o:w=1:g=-6,lowpass=f=10000,highpass=f=200")
-
-        # 2. Multiband Compression (using compand for better compatibility)
-        if mbc_preset and mbc_preset != 'None' and mbc_preset != '':
-            if mbc_preset == 'Smooth':
-                # Gentle compression for subtle leveling
-                filters.append("compand=attacks=0.3:points=-80/-80|-45/-25|-27/-15|0/-6:gain=3")
-            elif mbc_preset == 'Punchy':
-                # More aggressive compression for punch
-                filters.append("compand=attacks=0.1:points=-80/-80|-50/-30|-30/-15|0/-8:gain=5")
-            elif mbc_preset == 'Broadcast':
-                # Heavy compression for consistent loudness
-                filters.append("compand=attacks=0.05:points=-80/-80|-55/-35|-35/-15|-10/-5|0/-3:gain=6")
-
-        # 3. Stereo Enhancement (High-band focused)
-        if enhance:
-            filters.append(f"crystalizer=i={(enhance_intensity+1)},extrastereo=m={enhance_intensity}")
-
-        # 4. Loudness Normalization + Limiter (Final volume safely)
-        if normalize:
-            filters.append(f"loudnorm=I={normalize_i}:LRA=11:TP=-1.5")
-
+    filters = build_filter_chain(
+        start_time=start_time,
+        end_time=end_time,
+        eq_preset=eq_preset,
+        mbc_preset=mbc_preset,
+        enhance=enhance,
+        enhance_intensity=enhance_intensity,
+        normalize=normalize,
+        normalize_i=normalize_i,
+        original=original,
+        trim_silence=trim_silence,
+        silence_thresh=silence_thresh,
+    )
     if filters:
         args.extend(['-af', ",".join(filters)])
 
-    # Output to stdout as MP3 for browser playback
-    # We use libmp3lame and set a reasonable bitrate. 
-    # Removed -re to allow the browser to download/buffer as fast as possible.
+    # Output to stdout as MP3 for browser playback.
     args.extend(['-f', 'mp3', '-acodec', 'libmp3lame', '-ab', '320k', 'pipe:1'])
     return args
 

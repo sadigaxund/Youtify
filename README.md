@@ -1,4 +1,3 @@
-
 # Youtify
 
 A modern, web-based tool for downloading high-quality audio from YouTube with advanced processing features.
@@ -14,7 +13,46 @@ A modern, web-based tool for downloading high-quality audio from YouTube with ad
   - **Browser Download**: Process and download directly to your device.
   - **Server Save**: Mount a volume and save files directly to your server (e.g., for Jellyfin/Nextcloud).
 
-## Build & Run with Docker
+## Installation
+
+### Option 1: Run with Python
+
+1. **Install Prerequisites**
+   Ensure you have Python 3.11+ and FFmpeg installed:
+   ```bash
+   # Linux (Ubuntu/Debian)
+   sudo apt install ffmpeg python3-pip
+   # Linux (Fedora)
+   sudo dnf install ffmpeg python3-pip
+
+   # macOS
+   brew install ffmpeg
+   ```
+
+2. **Install Dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Run the App**
+   ```bash
+   python main.py
+   ```
+
+   **Options:**
+   - `--save-dir "/path/to/downloads"`: Save files to a specific directory on the server.
+   - `SAVE_DIRECTORY="/path"`: Alternative using environment variables.
+
+   *Example:*
+   ```bash
+   # Run with a save directory
+   python main.py --save-dir ~/Music/Youtify
+   ```
+   *Note: If no directory is set, the app defaults to **Browser Download Mode**.*
+
+   The server will start at `http://localhost:8000`.
+
+### Option 2: Build & Run with Docker
 
 Build the image:
 ```bash
@@ -44,3 +82,40 @@ docker run -d \
 ```
 
 Access the UI at `http://localhost:8000`.
+
+### Option 3: Chrome Extension
+
+A Chrome extension is included that lets you download audio directly from any YouTube video page. It connects to the backend running on your machine.
+
+#### 1. Start the Backend
+
+The extension requires the backend server to be running. Start it using **any** of the methods above (Python or Docker):
+
+```bash
+# Simplest — browser download mode
+python main.py
+
+# Or with a save directory
+python main.py --save-dir ~/Music/Youtify
+```
+
+The server must be accessible at `http://localhost:8000`.
+
+#### 2. Load the Extension in Chrome
+
+1. Open `chrome://extensions/` in your browser.
+2. Enable **Developer mode** (toggle in the top-right corner).
+3. Click **Load unpacked**.
+4. Select the `extensions/chrome/` directory from this project.
+
+The Youtify icon will appear in your Chrome toolbar.
+
+#### 3. Usage
+
+1. Navigate to any YouTube video (e.g. `https://www.youtube.com/watch?v=...`).
+2. Click the **Youtify extension icon** in your toolbar.
+3. The popup **automatically captures the video URL** and triggers a search.
+4. Adjust audio effects, edit metadata, set time range — all the same features as the web UI.
+5. Click **Download** to save the MP3 to your browser's download folder.
+
+> **Note:** A green dot in the popup header indicates the backend is connected. If it's red, make sure the server is running.
