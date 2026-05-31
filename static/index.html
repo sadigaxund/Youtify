@@ -277,8 +277,40 @@
 
         .range-inputs {
             display: flex;
-            gap: 0.25rem;
+            gap: 0.5rem;
+        }
+
+        .rng-field {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            font-size: 0.68rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .rng-field input {
+            width: 56px;
+            padding: 0.2rem 0.35rem;
+            font-size: 0.78rem;
+            font-family: monospace;
+            text-align: center;
             color: var(--primary);
+            background: rgba(255, 0, 80, 0.06);
+            border: 1px solid rgba(255, 0, 80, 0.25);
+            border-radius: 6px;
+            outline: none;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .rng-field input:focus {
+            border-color: var(--primary);
+            background: rgba(255, 0, 80, 0.12);
+        }
+
+        .time-now {
+            font-variant-numeric: tabular-nums;
         }
 
         .slider-wrapper {
@@ -338,15 +370,33 @@
             position: absolute;
             top: 50%;
             left: 0;
-            width: 3px;
-            height: 14px;
+            width: 4px;
+            height: 20px;
             background: #fff;
             transform: translate(-50%, -50%);
             pointer-events: none;
             z-index: 10;
-            box-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
-            border-radius: 1px;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.9);
+            border-radius: 2px;
             display: none;
+        }
+
+        .playback-pointer::before {
+            content: '';
+            position: absolute;
+            top: -5px;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #fff;
+            transform: translateX(-50%);
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.9);
+        }
+
+        /* Make the track taller / easier to click & drag */
+        .slider-wrapper {
+            cursor: pointer;
         }
 
         .slider-input {
@@ -621,6 +671,125 @@
             font-size: 0.75rem;
             width: 100%;
             outline: none;
+        }
+
+        /* A/B Compare */
+        .ab-compare {
+            margin-top: 0.9rem;
+            border-top: 1px solid var(--card-border);
+            padding-top: 0.75rem;
+        }
+
+        .ab-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            margin-bottom: 0.5rem;
+        }
+
+        .ab-head span {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .ab-head button {
+            width: auto;
+            margin: 0;
+            padding: 0.15rem 0.5rem;
+            font-size: 0.65rem;
+            font-weight: 600;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+            color: var(--text-dim);
+        }
+
+        .ab-head button:hover {
+            transform: none;
+            box-shadow: none;
+            color: #fff;
+        }
+
+        .ab-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            max-height: 190px;
+            overflow-y: auto;
+        }
+
+        .ab-empty {
+            font-size: 0.72rem;
+            color: var(--text-dim);
+            opacity: 0.6;
+            font-style: italic;
+            padding: 0.4rem 0;
+        }
+
+        .ab-chip {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.4rem 0.6rem;
+            border-radius: 9px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--card-border);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .ab-chip:hover {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .ab-chip.active {
+            background: rgba(255, 0, 80, 0.1);
+            border-color: var(--primary);
+        }
+
+        .ab-chip .ab-play {
+            color: var(--primary);
+            display: flex;
+            flex-shrink: 0;
+        }
+
+        .ab-chip .ab-label {
+            flex: 1;
+            min-width: 0;
+            font-size: 0.74rem;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .ab-chip .ab-act {
+            flex-shrink: 0;
+            width: 22px;
+            height: 22px;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+        }
+
+        .ab-chip .ab-act:hover {
+            transform: none;
+            box-shadow: none;
+            color: #fff;
+            background: rgba(255, 255, 255, 0.08);
         }
 
         /* Pipeline Progress */
@@ -907,13 +1076,16 @@
                         </button>
                         <div class="range-container">
                             <div class="range-header">
-                                <span id="currentTimeDisplay">00:00</span>
+                                <span class="time-now">
+                                    <span id="currentTimeDisplay">00:00</span>
+                                    <span style="opacity:0.4">/</span>
+                                    <span id="totalDisplay" style="opacity:0.6">00:00</span>
+                                </span>
                                 <div class="range-inputs">
-                                    <span id="startDisplay" contenteditable="true"
-                                        style="border-bottom: 1px dashed var(--primary); cursor: pointer;">00:00</span>
-                                    <span>-</span>
-                                    <span id="endDisplay" contenteditable="true"
-                                        style="border-bottom: 1px dashed var(--primary); cursor: pointer;">00:00</span>
+                                    <label class="rng-field"><span>Start</span><input id="startDisplay" type="text"
+                                            inputmode="numeric" value="00:00"></label>
+                                    <label class="rng-field"><span>End</span><input id="endDisplay" type="text"
+                                            inputmode="numeric" value="00:00"></label>
                                 </div>
                             </div>
                             <div class="slider-wrapper">
@@ -984,21 +1156,6 @@
                             </div>
                         </div>
                         <div class="grid-item">
-                            <label>Compression</label>
-                            <div style="display:flex; gap:0.4rem; align-items:center;">
-                                <label class="mini-toggle">
-                                    <input type="checkbox" id="mbcToggle">
-                                    <div class="mini-check"><i data-lucide="check"></i></div>
-                                </label>
-                                <select id="mbcPresetSelect" class="styled-select-mini"
-                                    style="width:auto; padding:0.2rem 0.4rem;">
-                                    <option value="Smooth">Smooth</option>
-                                    <option value="Punchy" selected>Punchy</option>
-                                    <option value="Broadcast">Broadcast</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="grid-item">
                             <label title="Pick one enhancement character. Restore: recover highs lost to YouTube's compression. Vocal Clarity: presence lift + de-mud for clearer vocals. Crisp/Air: stronger top-end sparkle. Warmth/De-harsh: low-mid warmth + tame harshness. All mono-safe.">Enhance</label>
                             <div style="display:flex; gap:0.4rem; align-items:center;">
                                 <select id="enhanceModeSelect" class="styled-select-mini">
@@ -1038,9 +1195,21 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- A/B compare: each Play snapshots the current effect set so you
+                         can flip between combos without touching the live controls. -->
+                    <div id="abCompare" class="ab-compare">
+                        <div class="ab-head">
+                            <span><i data-lucide="layers" style="width:12px;height:12px;"></i> A/B Compare</span>
+                            <button id="abClear" type="button" title="Clear all snapshots">Clear</button>
+                        </div>
+                        <div id="abList" class="ab-list">
+                            <span class="ab-empty">Press play — each combo you preview is saved here to flip between.</span>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="processing-card" style="margin-top: 0.25rem;">
+                <div class="processing-card">
                     <div class="card-header">
                         <div class="card-title">
                             <i data-lucide="tags" style="width:14px"></i>
@@ -1171,7 +1340,7 @@
                 </div>
 
                 <div style="display: flex; gap: 0.75rem; grid-column:1 / -1;">
-                    <button id="downloadBtn" style="flex:2">
+                    <button id="downloadBtn" style="flex:1">
                         <i data-lucide="download"></i>
                         <span>Download</span>
                     </button>
@@ -1269,6 +1438,7 @@
                 previewBtn: document.getElementById('previewBtn'),
                 playbackPointer: document.getElementById('playbackPointer'),
                 currentTimeDisplay: document.getElementById('currentTimeDisplay'),
+                totalDisplay: document.getElementById('totalDisplay'),
                 startDisplay: document.getElementById('startDisplay'),
                 endDisplay: document.getElementById('endDisplay'),
                 startSlider: document.getElementById('startSlider'),
@@ -1324,7 +1494,9 @@
                 metaYear: document.getElementById('metaYear'),
                 addTagBtn: document.getElementById('addTagBtn'),
                 customTagsContainer: document.getElementById('customTagsContainer'),
-                delimiterInput: document.getElementById('delimiterInput')
+                delimiterInput: document.getElementById('delimiterInput'),
+                abList: document.getElementById('abList'),
+                abClear: document.getElementById('abClear')
             };
 
             // --- Pipeline Progress Helpers ---
@@ -1807,6 +1979,7 @@
                 els.endSlider.max = duration;
                 els.startSlider.value = 0;
                 els.endSlider.value = duration;
+                els.totalDisplay.textContent = formatTime(duration);
                 updateRangeUI();
             }
 
@@ -1849,9 +2022,19 @@
                 const endPct = (end / videoDuration) * 100;
                 els.sliderRange.style.left = startPct + '%';
                 els.sliderRange.style.width = (endPct - startPct) + '%';
-                els.startDisplay.textContent = formatTime(start);
-                els.endDisplay.textContent = formatTime(end);
-                stopPlayback(); // Reset if range changes
+                // Only overwrite the input text when it's not being edited (avoids
+                // fighting the user mid-type).
+                if (document.activeElement !== els.startDisplay) els.startDisplay.value = formatTime(start);
+                if (document.activeElement !== els.endDisplay) els.endDisplay.value = formatTime(end);
+
+                // Range changes no longer stop playback (full-file model). Just keep
+                // the playhead inside the new window.
+                if (!els.previewAudio.paused) {
+                    const cur = els.previewAudio.currentTime;
+                    if (cur < start || cur > end) {
+                        try { els.previewAudio.currentTime = start; } catch (e) { }
+                    }
+                }
             }
 
             function formatTime(seconds) {
@@ -1866,49 +2049,48 @@
             els.startSlider.addEventListener('input', updateRangeUI);
             els.endSlider.addEventListener('input', updateRangeUI);
 
-            // Click-to-seek on slider track (for playback position during preview)
+            // Click-to-seek: jump the playhead anywhere on the track. Direct seek,
+            // since the preview is the full file (currentTime == timeline).
             els.sliderWrapper.addEventListener('click', (e) => {
-                // Ignore if clicking on the slider thumbs themselves
                 if (e.target === els.startSlider || e.target === els.endSlider) return;
-
-                // Calculate click position as percentage
-                const rect = els.sliderWrapper.getBoundingClientRect();
-                const clickX = e.clientX - rect.left;
-                const percentage = Math.max(0, Math.min(1, clickX / rect.width));
-                const seekTime = percentage * videoDuration;
-
-                // Get current selected range
-                const start = parseFloat(els.startSlider.value);
-                const end = parseFloat(els.endSlider.value);
-
-                // If audio is playing and click is within selected range, seek to that position
-                if (!els.previewAudio.paused && els.previewAudio.src) {
-                    // Calculate relative position within the clip
-                    if (seekTime >= start && seekTime <= end) {
-                        const clipPosition = seekTime - start;
-                        els.previewAudio.currentTime = clipPosition;
-                    }
-                }
+                const rect = els.sliderTrack.getBoundingClientRect();
+                const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                const t = pct * videoDuration;
+                els.playbackPointer.style.display = 'block';
+                els.playbackPointer.style.left = (pct * 100) + '%';
+                els.currentTimeDisplay.textContent = formatTime(t);
+                if (currentSrc) { try { els.previewAudio.currentTime = t; } catch (e) { } }
             });
 
-            // Manual time editing
+            // Manual time editing — accepts ss, mm:ss, or h:mm:ss; clamps; reformats.
+            function parseTimeInput(str) {
+                const parts = str.split(':').map(p => parseInt(p, 10));
+                if (parts.some(isNaN)) return null;
+                let secs;
+                if (parts.length === 3) secs = parts[0] * 3600 + parts[1] * 60 + parts[2];
+                else if (parts.length === 2) secs = parts[0] * 60 + parts[1];
+                else secs = parts[0];
+                return secs;
+            }
             [els.startDisplay, els.endDisplay].forEach((el, idx) => {
-                el.addEventListener('blur', () => {
-                    const parts = el.textContent.split(':').map(p => parseInt(p));
-                    let secs = 0;
-                    if (parts.length === 3) secs = parts[0] * 3600 + parts[1] * 60 + parts[2];
-                    else if (parts.length === 2) secs = parts[0] * 60 + parts[1];
-                    else secs = parts[0];
-
-                    if (isNaN(secs) || secs < 0) secs = 0;
-                    if (secs > videoDuration) secs = videoDuration;
-
-                    if (idx === 0) els.startSlider.value = secs;
-                    else els.endSlider.value = secs;
+                const commit = () => {
+                    let secs = parseTimeInput(el.value.trim());
+                    if (secs == null) {  // invalid -> restore from slider
+                        el.value = formatTime(idx === 0 ? rangeStart() : rangeEnd());
+                        return;
+                    }
+                    secs = Math.max(0, Math.min(videoDuration, secs));
+                    if (idx === 0) {
+                        els.startSlider.value = Math.min(secs, rangeEnd() - 1);
+                    } else {
+                        els.endSlider.value = Math.max(secs, rangeStart() + 1);
+                    }
                     updateRangeUI();
                     updateSilenceVisualization();
-                });
+                };
+                el.addEventListener('blur', commit);
                 el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } });
+                el.addEventListener('focus', () => el.select());
             });
 
             async function updateSilenceVisualization() {
@@ -2005,6 +2187,12 @@
                     updateFilenamePreview();
                     updateSilenceVisualization();
 
+                    // Fresh A/B list per video
+                    snapshots = [];
+                    activeSnapshotId = null;
+                    currentSrc = '';
+                    renderSnapshots();
+
                     // Start cache polling to show caching progress
                     startCachePoll(url);
 
@@ -2057,159 +2245,249 @@
                 if (isOriginal) {
                     els.normalizeToggle.checked = false;
                     els.eqToggle.checked = false;
-                    els.mbcToggle.checked = false;
+                    if (els.mbcToggle) els.mbcToggle.checked = false;
                     els.enhanceModeSelect.value = '';
                     els.trimSilenceToggle.checked = false;
                 }
-                stopPlayback();
+                onEffectChange();
             });
 
-            // Effect changes reset playback
-            [els.normalizeToggle, els.normalizeISelect, els.eqToggle, els.eqPresetSelect, els.mbcToggle, els.mbcPresetSelect, els.enhanceModeSelect, els.enhanceIntensitySelect, els.trimSilenceToggle, els.silenceThreshSelect].forEach(el => {
-                if (el) el.addEventListener('change', stopPlayback);
-            });
+            // When an effect changes: if playing, re-render the preview live at the
+            // current position; otherwise the next Play picks it up. Clears any
+            // active A/B snapshot selection (you're now on the live controls).
+            function onEffectChange() {
+                if (!els.previewAudio.paused) {
+                    // You're hearing this combo live, so snapshot it too — same as
+                    // pressing Play. Keeps the A/B list consistent with playback.
+                    const p = effectParams();
+                    recordSnapshot(p);
+                    renderSnapshots();
+                    playPreview(previewUrlFrom(p), els.previewAudio.currentTime);
+                } else {
+                    // Not playing: no audio heard yet, so don't snapshot — just drop
+                    // the active highlight (controls no longer match a saved combo).
+                    activeSnapshotId = null;
+                    renderSnapshots();
+                }
+            }
 
-            // Effect changes for download
-            els.downloadBtn.addEventListener('click', () => {
-                // Ensure latest effects are read
+            [els.normalizeToggle, els.normalizeISelect, els.eqToggle, els.eqPresetSelect,
+            els.mbcToggle, els.mbcPresetSelect, els.enhanceModeSelect, els.enhanceIntensitySelect,
+            els.originalToggle].forEach(el => {
+                if (el) el.addEventListener('change', onEffectChange);
             });
 
             // --- Audio Preview ---
-            let previewAbort = null;
+            // The preview plays the FULL processed track (effects only). Range +
+            // silence are applied only on export, so the playhead = currentTime
+            // maps 1:1 to the timeline and seeking/looping is trivial.
+            let currentSrc = '';   // /stream URL currently loaded (per effect set)
 
-            els.previewBtn.addEventListener('click', () => {
-                // If currently loading/streaming, ignore clicks
-                if (isStreaming) return;
+            function rangeStart() { return parseFloat(els.startSlider.value) || 0; }
+            function rangeEnd() { return parseFloat(els.endSlider.value) || videoDuration; }
 
-                if (els.previewAudio.paused && els.previewAudio.src && !els.previewBtn.dataset.loading) {
-                    els.previewAudio.play();
-                    return;
-                }
-                if (!els.previewAudio.paused) {
-                    els.previewAudio.pause();
-                    return;
-                }
-
-                // New Start - set streaming flag
-                isStreaming = true;
-
-                // CRITICAL: Stop any existing playback to prevent audio duplication
-                els.previewAudio.pause();
-                els.previewAudio.removeAttribute('src');
-                els.previewAudio.load();
-
-                const params = new URLSearchParams({
-                    url: els.urlInput.value.trim(),
-                    start_time: els.startSlider.value,
-                    end_time: els.endSlider.value,
+            // Effect set sent to /stream (NO range/silence — those are export-only).
+            function effectParams() {
+                return {
                     eq_preset: els.eqToggle && els.eqToggle.checked ? els.eqPresetSelect.value : '',
                     mbc_preset: els.mbcToggle && els.mbcToggle.checked ? els.mbcPresetSelect.value : '',
                     enhance_mode: els.enhanceModeSelect.value,
                     enhance_intensity: els.enhanceIntensitySelect.value,
                     normalize: els.normalizeToggle.checked,
                     normalize_i: els.normalizeISelect.value,
-                    original: els.originalToggle.checked,
-                    trim_silence: els.trimSilenceToggle.checked,
-                    silence_thresh: els.silenceThreshSelect.value
+                    original: els.originalToggle.checked
+                };
+            }
+
+            function previewUrlFrom(p) {
+                const params = new URLSearchParams({
+                    url: els.urlInput.value.trim(),
+                    eq_preset: p.eq_preset || '',
+                    mbc_preset: p.mbc_preset || '',
+                    enhance_mode: p.enhance_mode || '',
+                    enhance_intensity: p.enhance_intensity,
+                    normalize: p.normalize,
+                    normalize_i: p.normalize_i,
+                    original: p.original
                 });
-                if (previewAbort) previewAbort.abort();
-                previewAbort = new AbortController();
+                return `/stream?${params.toString()}`;
+            }
 
-                els.previewBtn.dataset.loading = "true";
-                setLoading(els.previewBtn, true);
+            // Load (if needed) and play from `seekTo` (defaults to range start).
+            function playPreview(url, seekTo) {
+                const startAt = (seekTo != null) ? seekTo : rangeStart();
+                const needLoad = (currentSrc !== url);
 
-                els.previewAudio.src = `/stream?${params.toString()}`;
-                els.previewAudio.load();
+                const begin = () => {
+                    try { if (Math.abs(els.previewAudio.currentTime - startAt) > 0.3) els.previewAudio.currentTime = startAt; } catch (e) { }
+                    const pr = els.previewAudio.play();
+                    if (pr) pr.catch(e => { if (e.name !== 'AbortError') { showError('Playback failed: ' + e.message); stopPlayback(); } });
+                };
 
-                const playPromise = els.previewAudio.play();
-                if (playPromise !== undefined) {
-                    playPromise.catch(e => {
-                        if (e.name !== 'AbortError') {
-                            showError("Playback failed: " + e.message);
-                            stopPlayback();
-                        }
-                    });
+                if (needLoad) {
+                    currentSrc = url;
+                    isStreaming = true;
+                    setLoading(els.previewBtn, true);
+                    els.previewBtn.dataset.loading = 'true';
+                    els.previewAudio.src = url;
+                    els.previewAudio.load();
+                    els.previewAudio.addEventListener('canplay', begin, { once: true });
+                } else {
+                    begin();
                 }
+            }
+
+            els.previewBtn.addEventListener('click', () => {
+                if (els.previewBtn.disabled) return;
+                if (!els.previewAudio.paused) { els.previewAudio.pause(); return; }
+                const p = effectParams();
+                const url = previewUrlFrom(p);
+                const resume = (currentSrc === url && els.previewAudio.currentTime > 0);
+                recordSnapshot(p);   // A/B: remember this combo (sets it active)
+                renderSnapshots();
+                // Resume from current position if same render; else start at range.
+                playPreview(url, resume ? els.previewAudio.currentTime : rangeStart());
             });
 
             els.previewAudio.addEventListener('error', () => {
-                // Ignore errors if source is empty (caused by stopPlayback)
                 if (!els.previewAudio.src || els.previewAudio.src === window.location.href) return;
-                showError("Streaming error: " + (els.previewAudio.error ? els.previewAudio.error.message : "Source failure"));
-                isStreaming = false; // Reset streaming flag on error
+                showError("Preview error: " + (els.previewAudio.error ? els.previewAudio.error.message : "source failure"));
+                isStreaming = false;
                 stopPlayback();
             });
 
             els.previewAudio.addEventListener('playing', () => {
-                isStreaming = false; // Reset streaming flag - stream started successfully
+                isStreaming = false;
                 setLoading(els.previewBtn, false);
                 els.previewBtn.classList.add('playing');
                 els.previewBtn.dataset.loading = "";
                 setIcon(els.previewBtn, 'pause');
                 els.playbackPointer.style.display = 'block';
-                startPointerTracking();
             });
 
             els.previewAudio.addEventListener('loadedmetadata', () => {
-                // The actual duration might be shorter than metadata if trimmed or range-clipped
-                console.log("Media ready. Duration:", els.previewAudio.duration);
-                // We NO LONGER update sliders max here as it breaks the selection range.
-                // The player logic now handles mapping clip progress to the [start, end] range.
+                els.totalDisplay.textContent = formatTime(videoDuration || els.previewAudio.duration);
+            });
+
+            // Playhead + in-range looping driven by the audio clock (accurate, no interval).
+            els.previewAudio.addEventListener('timeupdate', () => {
+                const cur = els.previewAudio.currentTime;
+                if (!videoDuration) return;
+                const end = rangeEnd();
+                if (cur >= end - 0.04) { try { els.previewAudio.currentTime = rangeStart(); } catch (e) { } return; }
+                const pct = Math.min(cur, videoDuration) / videoDuration * 100;
+                els.playbackPointer.style.left = pct + '%';
+                els.currentTimeDisplay.textContent = formatTime(cur);
             });
 
             els.previewAudio.addEventListener('pause', () => {
                 els.previewBtn.classList.remove('playing');
                 setIcon(els.previewBtn, 'play');
-                stopPointerTracking();
             });
 
-            els.previewAudio.addEventListener('ended', stopPlayback);
+            // Full file loops within range, so 'ended' only fires if range = whole file.
+            els.previewAudio.addEventListener('ended', () => {
+                try { els.previewAudio.currentTime = rangeStart(); els.previewAudio.play(); } catch (e) { stopPlayback(); }
+            });
 
             function stopPlayback() {
-                isStreaming = false; // Reset streaming flag
+                isStreaming = false;
                 els.previewAudio.pause();
-                // Use removeAttribute and load() to clean up without triggering invalid URI errors
-                els.previewAudio.removeAttribute('src');
-                els.previewAudio.load();
                 els.previewBtn.classList.remove('playing');
-                els.previewBtn.dataset.loading = ""; // Clear loading state
+                els.previewBtn.dataset.loading = "";
                 setLoading(els.previewBtn, false);
                 setIcon(els.previewBtn, 'play');
                 els.playbackPointer.style.display = 'none';
                 els.currentTimeDisplay.textContent = "00:00";
-                stopPointerTracking();
             }
 
-            function startPointerTracking() {
-                stopPointerTracking();
-                playbackInterval = setInterval(() => {
-                    const current = els.previewAudio.currentTime;
-                    const duration = els.previewAudio.duration;
-                    if (duration && duration > 0 && !isNaN(current)) {
-                        const start = parseFloat(els.startSlider.value);
-                        const end = parseFloat(els.endSlider.value);
-                        const selectedRange = end - start;
+            // --- A/B Compare snapshots ---
+            // Each Play records the current effect set as a chip. Click a chip to
+            // hear that combo instantly (cached server-side) without disturbing the
+            // live controls; "load" copies it back into the controls; ✕ removes it.
+            let snapshots = [];
+            let activeSnapshotId = null;
+            let snapSeq = 0;
 
-                        // The processed clip plays from 0 to duration
-                        // Map this to the visual range [start, end] on the timeline
-                        // If duration < selectedRange (due to silence trim), we still map to full range
-                        const actualTimeOnTimeline = start + current;
-
-                        // Clamp to selected range
-                        const clampedTime = Math.min(actualTimeOnTimeline, end);
-                        const pct = (clampedTime / videoDuration) * 100;
-                        els.playbackPointer.style.left = pct + '%';
-                        els.currentTimeDisplay.textContent = formatTime(clampedTime);
-                    }
-                }, 100);
+            function paramsKey(p) {
+                return [p.eq_preset || '', p.mbc_preset || '', p.enhance_mode || '', p.enhance_intensity,
+                !!p.normalize, p.normalize_i, !!p.original].join('|');
             }
-
-            function stopPointerTracking() {
-                if (playbackInterval) {
-                    clearInterval(playbackInterval);
-                    playbackInterval = null;
+            function snapLabel(p) {
+                if (p.original) return 'Original (no FX)';
+                const lvl = { '1': 'Lo', '1.0': 'Lo', '1.5': 'Md', '2': 'Hi', '2.0': 'Hi' }[String(p.enhance_intensity)] || '';
+                const bits = [];
+                if (p.eq_preset) bits.push('EQ ' + p.eq_preset);
+                if (p.mbc_preset) bits.push('Cmp ' + p.mbc_preset);
+                if (p.enhance_mode) bits.push(p.enhance_mode + (lvl ? ' ' + lvl : ''));
+                if (p.normalize) bits.push('Norm ' + p.normalize_i);
+                return bits.length ? bits.join(' · ') : 'Dry (no FX)';
+            }
+            function recordSnapshot(p) {
+                const key = paramsKey(p);
+                let s = snapshots.find(x => paramsKey(x.params) === key);
+                if (!s) {
+                    s = { id: ++snapSeq, params: { ...p }, label: snapLabel(p) };
+                    snapshots.unshift(s);
+                    if (snapshots.length > 8) snapshots.length = 8;
                 }
+                activeSnapshotId = s.id;
             }
+            function renderSnapshots() {
+                const list = els.abList;
+                if (!list) return;
+                if (!snapshots.length) {
+                    list.innerHTML = '<span class="ab-empty">Press play — each combo you preview is saved here to flip between.</span>';
+                    return;
+                }
+                list.innerHTML = '';
+                snapshots.forEach(s => {
+                    const chip = document.createElement('div');
+                    chip.className = 'ab-chip' + (s.id === activeSnapshotId ? ' active' : '');
+                    chip.innerHTML = `
+                        <span class="ab-play"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+                        <span class="ab-label">${s.label}</span>
+                        <button class="ab-act ab-load" title="Load into controls"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg></button>
+                        <button class="ab-act ab-del" title="Remove"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`;
+                    chip.addEventListener('click', (e) => { if (e.target.closest('.ab-act')) return; playSnapshot(s.id); });
+                    chip.querySelector('.ab-load').addEventListener('click', (e) => { e.stopPropagation(); loadSnapshot(s.id); });
+                    chip.querySelector('.ab-del').addEventListener('click', (e) => { e.stopPropagation(); removeSnapshot(s.id); });
+                    list.appendChild(chip);
+                });
+            }
+            function playSnapshot(id) {
+                const s = snapshots.find(x => x.id === id);
+                if (!s) return;
+                activeSnapshotId = id;
+                renderSnapshots();
+                playPreview(previewUrlFrom(s.params), els.previewAudio.paused ? rangeStart() : els.previewAudio.currentTime);
+            }
+            function removeSnapshot(id) {
+                snapshots = snapshots.filter(x => x.id !== id);
+                if (activeSnapshotId === id) activeSnapshotId = null;
+                renderSnapshots();
+            }
+            function applyParamsToControls(p) {
+                els.originalToggle.checked = !!p.original;
+                els.advancedControls.style.opacity = p.original ? '0.3' : '1';
+                els.advancedControls.style.pointerEvents = p.original ? 'none' : 'auto';
+                els.eqToggle.checked = !!p.eq_preset;
+                if (p.eq_preset) els.eqPresetSelect.value = p.eq_preset;
+                if (els.mbcToggle) { els.mbcToggle.checked = !!p.mbc_preset; if (p.mbc_preset && els.mbcPresetSelect) els.mbcPresetSelect.value = p.mbc_preset; }
+                els.enhanceModeSelect.value = p.enhance_mode || '';
+                if (p.enhance_intensity) els.enhanceIntensitySelect.value = p.enhance_intensity;
+                els.normalizeToggle.checked = !!p.normalize;
+                if (p.normalize_i) els.normalizeISelect.value = p.normalize_i;
+            }
+            function loadSnapshot(id) {
+                const s = snapshots.find(x => x.id === id);
+                if (!s) return;
+                applyParamsToControls(s.params);
+                activeSnapshotId = id;
+                renderSnapshots();
+                if (!els.previewAudio.paused) playPreview(previewUrlFrom(s.params), els.previewAudio.currentTime);
+            }
+            els.abClear.addEventListener('click', () => { snapshots = []; activeSnapshotId = null; renderSnapshots(); });
 
             // --- Process flow ---
             els.downloadBtn.addEventListener('click', async () => {
