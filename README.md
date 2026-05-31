@@ -5,7 +5,7 @@
 
 # Youtify
 
-A modern, web-based tool for downloading high-quality audio from YouTube with advanced processing features.
+A modern, web-based tool for pulling high-quality audio from YouTube — preview effects live in the browser, tag it, and save it either to your device or straight into a server media library.
 
 
 <img width="1218" height="1399" alt="image" src="https://github.com/user-attachments/assets/b8a1806b-53cc-4e0c-9c82-b9de0ce380be" />
@@ -13,65 +13,84 @@ A modern, web-based tool for downloading high-quality audio from YouTube with ad
 
 ## Features
 
-- **High Quality Audio**: Downloads best audio stream and converts to MP3 (default 320kbps via pydub export).
-- **Audio Processing Pipeline**: Normalize, EQ, Silence Trim, Stereo Enhance.
-- **Metadata Editor**: Auto-fetches cover art, title, artist. Supports custom tags.
-- **Configurable Delimiter**: Choose your separator for multiple artists/genres (e.g., `,`, `|`, `;`).
-- **Docker Support**: Runs as a non-root user with PUID/PGID mapping for correct file permissions.
-- **Two Modalities**:
-  - **Browser Download**: Process and download directly to your device.
-  - **Server Save**: Mount a volume and save files directly to your server (e.g., for Jellyfin/Nextcloud).
+### Audio quality & processing
+- **Single-encode pipeline** — best available source is cached once, then rendered with **one** FFmpeg pass to **320 kbps MP3**. Only one lossy stage, so quality stays close to the source (no repeated re-encoding).
+- **Loudness normalization** — EBU R128 (`loudnorm`) with selectable target (-12 / -16 / -23 LUFS) and a true-peak limiter.
+- **EQ presets** — Pop, Rock, Jazz, Classical, Acoustic, Electronic, Podcast, Lo-Fi, Bass Boost, Treble Boost.
+- **Enhancement modes** (pick one, each with Low / Mid / High):
+  - **Restore** — regenerates high-frequency detail lost to YouTube's lossy AAC. Subtle, mono-safe, keeps the original feel.
+  - **Vocal Clarity** — presence lift + de-mud for clearer vocals/speech.
+  - **Crisp / Air** — stronger top-end sparkle for dull or muffled sources.
+  - **Warmth / De-harsh** — low-mid warmth + tames harsh upper-mids.
+- **Range select & silence trim** — clip to a time range and strip leading silence; applied only on export so the preview stays full-length.
+- **Original bypass** — save an untouched copy with no processing.
+
+### Preview & compare
+- **Seekable live preview** — plays the full track with your effects applied; drag the playhead anywhere and it maps 1:1 to the timeline.
+- **A/B compare** — every combo you preview is saved as a chip. Flip between them instantly (each render is cached per effect-set) to compare, without disturbing your current controls. Load any snapshot back into the controls in one click.
+- **Real-time progress** — separate live bars for caching (download) and processing (FFmpeg), instead of a single "done" flip.
+
+### Metadata
+- Auto-fetches cover art, title, artist, and year from the video.
+- Multi-artist / multi-genre tagging with autocomplete that **remembers what you've typed** (stored locally in the browser).
+- Custom ID3 tags, cover-art upload (auto-resized to keep files small), and a configurable delimiter for multiple artists/genres (e.g. `,`, `|`, `;`).
+
+### Deployment
+- **Browser Download** (default): process and download straight to your device.
+- **Server Save**: mount a volume and write files directly to your server library (e.g. Jellyfin / Nextcloud).
+- **Docker** support, running as a non-root user with PUID/PGID mapping for correct file ownership.
+
+## How it works
+
+`Search` caches the best audio stream once. Both the **preview** and the final **export** build their FFmpeg filter graph from the *same* shared chain over that cache, so what you hear is what you get. The preview plays the full track with effects only (seekable, cached per effect-set); time-range and silence cuts are applied only on export, in a single 320 kbps encode.
 
 ## Installation
 
 ### Option 1: Run with Python
 
-1. **Install Prerequisites**
-   Ensure you have Python 3.11+ and FFmpeg installed:
+1. **Install prerequisites** — Python 3.11+ and FFmpeg:
    ```bash
    # Linux (Ubuntu/Debian)
    sudo apt install ffmpeg python3-pip
    # Linux (Fedora)
    sudo dnf install ffmpeg python3-pip
-
    # macOS
    brew install ffmpeg
    ```
 
-2. **Install Dependencies**
+2. **Install dependencies**
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Run the App**
+3. **Run the app**
    ```bash
    python main.py
    ```
 
    **Options:**
-   - `--save-dir "/path/to/downloads"`: Save files to a specific directory on the server.
-   - `SAVE_DIRECTORY="/path"`: Alternative using environment variables.
+   - `--save-dir "/path/to/downloads"` — save files to a directory on the server.
+   - `SAVE_DIRECTORY="/path"` — same thing via environment variable.
 
    *Example:*
    ```bash
-   # Run with a save directory
    python main.py --save-dir ~/Music/Youtify
    ```
-   *Note: If no directory is set, the app defaults to **Browser Download Mode**.*
+   *If no directory is set, the app runs in **Browser Download Mode**.*
 
-   The server will start at `http://localhost:8000`.
+   The server starts at `http://localhost:8000`.
 
-### Option 2: Build & Run with Docker
+### Option 2: Build & run with Docker
 
 Build the image:
 ```bash
 docker build -t youtify .
 ```
 
-Run the container (Server Save Mode):
+Run (Server Save mode):
 ```bash
-# Replace /path/to/music with your host's music directory
-# PUID/PGID ensures files are owned by your user, not root
+# Replace /path/to/music with your host's music directory.
+# PUID/PGID make saved files owned by your user, not root.
 docker run -d \
   --name youtify \
   -p 8000:8000 \
@@ -82,7 +101,7 @@ docker run -d \
   youtify
 ```
 
-Run the container (Browser Mode):
+Run (Browser Download mode):
 ```bash
 docker run -d \
   --name youtify \
@@ -92,39 +111,9 @@ docker run -d \
 
 Access the UI at `http://localhost:8000`.
 
-### Option 3: Chrome Extension
+## Usage
 
-A Chrome extension is included that lets you download audio directly from any YouTube video page. It connects to the backend running on your machine.
-
-#### 1. Start the Backend
-
-The extension requires the backend server to be running. Start it using **any** of the methods above (Python or Docker):
-
-```bash
-# Simplest — browser download mode
-python main.py
-
-# Or with a save directory
-python main.py --save-dir ~/Music/Youtify
-```
-
-The server must be accessible at `http://localhost:8000`.
-
-#### 2. Load the Extension in Chrome
-
-1. Open `chrome://extensions/` in your browser.
-2. Enable **Developer mode** (toggle in the top-right corner).
-3. Click **Load unpacked**.
-4. Select the `extensions/chrome/` directory from this project.
-
-The Youtify icon will appear in your Chrome toolbar.
-
-#### 3. Usage
-
-1. Navigate to any YouTube video (e.g. `https://www.youtube.com/watch?v=...`).
-2. Click the **Youtify extension icon** in your toolbar.
-3. The popup **automatically captures the video URL** and triggers a search.
-4. Adjust audio effects, edit metadata, set time range — all the same features as the web UI.
-5. Click **Download** to save the MP3 to your browser's download folder.
-
-> **Note:** A green dot in the popup header indicates the backend is connected. If it's red, make sure the server is running.
+1. Paste a YouTube URL and hit **Search** — the thumbnail/metadata load and the audio starts caching in the background.
+2. Set a **time range**, pick **effects**, and press **play** to preview. Try a few combos; each is saved to the **A/B** list to compare.
+3. Edit **metadata** and cover art.
+4. Hit **Download** — files stream to your browser (or save to the server in Server Save mode).
