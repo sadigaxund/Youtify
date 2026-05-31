@@ -1,4 +1,6 @@
-<img width="1978" height="1030" alt="image" src="https://github.com/user-attachments/assets/eb2b8c5a-118f-4e87-a3ba-72dfde81b087" />
+
+<img width="1590" height="878" alt="image" src="https://github.com/user-attachments/assets/c454b82a-764f-4a34-bc12-95b2d42a25de" />
+
 
 
 # Youtify
@@ -6,9 +8,7 @@
 A modern, web-based tool for downloading high-quality audio from YouTube with advanced processing features.
 
 
-
-## Watch on YouTube:
-[![Watch Video](https://i9.ytimg.com/vi/C3CCQu8Uuhc/maxresdefault.jpg?time=1771038600000&sqp=CIjPv8wG&rs=AOn4CLBF1n_E-FCx-E66EVQEXVZx4KWxpQ)](https://www.youtube.com/watch?v=C3CCQu8Uuhc)
+<img width="1218" height="1399" alt="image" src="https://github.com/user-attachments/assets/b8a1806b-53cc-4e0c-9c82-b9de0ce380be" />
 
 
 ## Features
