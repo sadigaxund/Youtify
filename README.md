@@ -1,11 +1,16 @@
 
 <img width="1590" height="878" alt="image" src="https://github.com/user-attachments/assets/c454b82a-764f-4a34-bc12-95b2d42a25de" />
 
+<h1 align="center">Youtify</h1>
 
+<p align="center">
+  <strong>Pull high-quality audio from YouTube, preview effects live, tag it, and save it — to your device or straight into a server media library.</strong>
+</p>
 
-# Youtify
-
-A modern, web-based tool for pulling high-quality audio from YouTube — preview effects live in the browser, tag it, and save it either to your device or straight into a server media library.
+<p align="center">
+  <a href="https://hub.docker.com/r/sakhund/youtify"><img src="https://img.shields.io/docker/pulls/sakhund/youtify?style=flat-square" /></a>
+  <a href="https://hub.docker.com/r/sakhund/youtify"><img src="https://img.shields.io/docker/v/sakhund/youtify?sort=semver&style=flat-square" /></a>
+</p>
 
 
 <img width="1218" height="1399" alt="image" src="https://github.com/user-attachments/assets/b8a1806b-53cc-4e0c-9c82-b9de0ce380be" />
@@ -46,70 +51,57 @@ A modern, web-based tool for pulling high-quality audio from YouTube — preview
 
 ## Installation
 
-### Option 1: Run with Python
+### Option 1: Run directly with Python
 
-1. **Install prerequisites** — Python 3.11+ and FFmpeg:
-   ```bash
-   # Linux (Ubuntu/Debian)
-   sudo apt install ffmpeg python3-pip
-   # Linux (Fedora)
-   sudo dnf install ffmpeg python3-pip
-   # macOS
-   brew install ffmpeg
-   ```
+**Prerequisites:** Python 3.11+, FFmpeg, pip
 
-2. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Run the app**
-   ```bash
-   python main.py
-   ```
-
-   **Options:**
-   - `--save-dir "/path/to/downloads"` — save files to a directory on the server.
-   - `SAVE_DIRECTORY="/path"` — same thing via environment variable.
-
-   *Example:*
-   ```bash
-   python main.py --save-dir ~/Music/Youtify
-   ```
-   *If no directory is set, the app runs in **Browser Download Mode**.*
-
-   The server starts at `http://localhost:8000`.
-
-### Option 2: Build & run with Docker
-
-Build the image:
 ```bash
-docker build -t youtify .
+# Install FFmpeg
+# Ubuntu/Debian:  sudo apt install ffmpeg python3-pip
+# Fedora:          sudo dnf install ffmpeg python3-pip
+# macOS:           brew install ffmpeg
+
+# Clone & install
+git clone https://github.com/<your-repo>/youtify.git
+cd youtify
+pip install -r requirements.txt
+
+# Run (browser download mode)
+python main.py
+
+# Or run (server save mode)
+python main.py --save-dir ~/Music/Youtify
 ```
 
-Run (Server Save mode):
+Server starts at `http://localhost:8000`.
+
+### Option 2: Pull & run from Docker Hub (recommended)
+
 ```bash
-# Replace /path/to/music with your host's music directory.
-# PUID/PGID make saved files owned by your user, not root.
-docker run -d \
-  --name youtify \
-  -p 8000:8000 \
+docker pull sakhund/youtify:latest
+
+# Browser download mode
+docker run -d --name youtify -p 8000:8000 sakhund/youtify:latest
+
+# Server save mode (set PUID/PGID to your user ID for correct file ownership)
+docker run -d --name youtify -p 8000:8000 \
   -v /path/to/music:/music \
   -e SAVE_DIRECTORY=/music \
   -e PUID=$(id -u) \
   -e PGID=$(id -g) \
-  youtify
-```
-
-Run (Browser Download mode):
-```bash
-docker run -d \
-  --name youtify \
-  -p 8000:8000 \
-  youtify
+  sakhund/youtify:latest
 ```
 
 Access the UI at `http://localhost:8000`.
+
+### Option 3: Build image from source
+
+```bash
+git clone https://github.com/<your-repo>/youtify.git
+cd youtify
+docker build -t sakhund/youtify:latest .
+# Then run using Option 2 commands
+```
 
 ## Usage
 

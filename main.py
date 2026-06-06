@@ -5,7 +5,45 @@ import shutil
 import threading
 import datetime
 import traceback
+import logging
 from typing import Optional, Dict
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s │ %(levelname)-7s │ %(message)s",
+    datefmt="%H:%M:%S",
+)
+log = logging.getLogger("youtify")
+
+YOUTIFY_BANNER = r"""
+██╗   ██╗ ██████╗ ██╗   ██╗████████╗██╗███████╗██╗   ██╗
+╚██╗ ██╔╝██╔═══██╗██║   ██║╚══██╔══╝██║██╔════╝╚██╗ ██╔╝
+ ╚████╔╝ ██║   ██║██║   ██║   ██║   ██║█████╗   ╚████╔╝
+  ╚██╔╝  ██║   ██║██║   ██║   ██║   ██║██╔══╝    ╚██╔╝
+   ██║   ╚██████╔╝╚██████╔╝   ██║   ██║██║        ██║
+   ╚═╝    ╚═════╝  ╚═════╝    ╚═╝   ╚═╝╚═╝        ╚═╝
+"""
+
+
+def print_startup_banner(*, mode, save_dir, originals_dir, cache_root, host_url, warning=None):
+    """One-time startup banner: ASCII logo + a tidy config summary."""
+    rows = [
+        ("Mode", mode),
+        ("Save dir", save_dir or "— (temporary, streamed to browser)"),
+        ("Archive", originals_dir or "—"),
+        ("Cache + DB", cache_root),
+        ("Listening", host_url),
+    ]
+    label_w = max(len(l) for l, _ in rows)
+    cells = [f"  {l.ljust(label_w)}   {v}" for l, v in rows]
+    inner = max(len(c) for c in cells) + 2
+    print(f"\033[38;5;205m{YOUTIFY_BANNER}\033[0m")
+    print("┌" + "─" * inner + "┐")
+    for c in cells:
+        print("│" + c.ljust(inner) + "│")
+    print("└" + "─" * inner + "┘")
+    if warning:
+        log.warning(warning)
 
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Body
 from fastapi.responses import StreamingResponse, FileResponse
@@ -15,12 +53,37 @@ from pydantic import BaseModel
 import json
 
 import argparse
-from youtube_downloader import validate_youtube_url, download_youtube_audio, get_video_info
+import sqlite3
+from youtube_downloader import (
+    validate_youtube_url, download_youtube_audio, get_video_info,
+    archive_original, retag_mp3_in_place, reprocess_from_original,
+    find_original, get_audio_duration,
+)
+
+# Import the database module
+from database import AudioMetadataDB
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Rebuild the DB index from the on-disk sidecars so the DB is fully
+    # disposable. Globals below are defined later at module load but resolved
+    # here at startup time.
+    if not BROWSER_DOWNLOAD_MODE:
+        try:
+            n = db.rebuild_from_sidecars(META_DIR, DOWNLOAD_DIR)
+            log.info("Library index: %d track(s) loaded from sidecars.", n)
+        except Exception as e:
+            log.warning("Startup library rebuild failed: %s", e)
+    yield
+
 
 app = FastAPI(
     title="YT2MP3",
     description="High-quality YouTube Audio Downloader",
-    version="1.2.1"
+    version="1.2.1",
+    lifespan=lifespan,
 )
 
 # CORS: Allow Chrome extension and other origins to access the API
@@ -39,50 +102,73 @@ download_progress: Dict[str, dict] = {}
 cache_progress: Dict[str, dict] = {}
 
 # Handle Configuration (CLI > ENV > DEFAULT)
+#   --save-dir  : permanent library on (typically) HDD. Holds the MP3s plus a
+#                 .youtify/ archive (originals + per-track metadata sidecars).
+#   --cache-dir : working + index store on (typically) SSD. Holds the preview/
+#                 download cache (work/) and the rebuildable metadata.db.
 def get_config():
     parser = argparse.ArgumentParser(description="YT2MP3 Backend Server")
     parser.add_argument("--save-dir", type=str, help="Directory to save MP3 files")
+    parser.add_argument("--cache-dir", type=str, help="Working cache + DB directory")
     args, unknown = parser.parse_known_args()
-    
-    # Priority 1: CLI Argument
-    if args.save_dir:
-        return args.save_dir
-    
-    # Priority 2: Environment Variable
-    return os.getenv("SAVE_DIRECTORY")
 
-ENV_SAVE_DIR = get_config()
+    save_dir = args.save_dir or os.getenv("SAVE_DIRECTORY")
+    cache_dir = (args.cache_dir or os.getenv("CACHE_DIRECTORY")
+                 or os.path.expanduser("~/.cache/youtify"))
+    return save_dir, cache_dir
+
+ENV_SAVE_DIR, ENV_CACHE_DIR = get_config()
+
+# Cache root (SSD): working files under work/, DB at the root so cleanup_cache
+# (which only scans work/) can never touch it.
+CACHE_ROOT = os.path.abspath(os.path.expanduser(ENV_CACHE_DIR))
+CACHE_DIR = os.path.join(CACHE_ROOT, "work")
+DB_PATH = os.path.join(CACHE_ROOT, "metadata.db")
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+db = AudioMetadataDB(DB_PATH)
 
 # If no save directory configured, we'll stream downloads directly to browser
 BROWSER_DOWNLOAD_MODE = ENV_SAVE_DIR is None
 DOWNLOAD_DIR = None
+ORIGINALS_DIR = None
+META_DIR = None
+_startup_warning = None
 
 if not BROWSER_DOWNLOAD_MODE:
     # Expand user and resolve to absolute path for reliability
     DOWNLOAD_DIR = os.path.abspath(os.path.expanduser(ENV_SAVE_DIR))
-    
+
     try:
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-        print(f"FILES WILL BE SAVED TO: {DOWNLOAD_DIR}")
-    except Exception as e:
+    except Exception:
         # Fallback to a safe temp directory if provided path is unwritable (common in Docker)
-        DOWNLOAD_DIR = os.path.join(tempfile.gettempdir(), "yt2mp3_fallback")
-        os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-        print(f"WARNING: Could not use {ENV_SAVE_DIR}. Falling back to: {DOWNLOAD_DIR}")
-else:
-    print("BROWSER DOWNLOAD MODE: Files will be streamed to browser (no save directory configured)")
-    print("----------------------------------------------------------------")
-    print("    MODE: Browser Download (Files are temporary)")
-    print("    NOTE: Set SAVE_DIRECTORY env var or --save-dir to save files to disk.")
-    print("----------------------------------------------------------------")
+        fallback = os.path.join(tempfile.gettempdir(), "yt2mp3_fallback")
+        os.makedirs(fallback, exist_ok=True)
+        _startup_warning = f"Could not use {ENV_SAVE_DIR}; falling back to {fallback}"
+        DOWNLOAD_DIR = fallback
+
+    # Archive lives with the library (HDD): originals for reprocessing +
+    # per-track JSON sidecars that can rebuild the DB if it's lost.
+    ORIGINALS_DIR = os.path.join(DOWNLOAD_DIR, ".youtify", "originals")
+    META_DIR = os.path.join(DOWNLOAD_DIR, ".youtify", "meta")
+    os.makedirs(ORIGINALS_DIR, exist_ok=True)
+    os.makedirs(META_DIR, exist_ok=True)
 
 # Create static directory if it doesn't exist
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 os.makedirs(STATIC_DIR, exist_ok=True)
 
-# Create cache directory for snappy previews
-CACHE_DIR = os.path.join(tempfile.gettempdir(), "yt2mp3_cache")
-os.makedirs(CACHE_DIR, exist_ok=True)
+print_startup_banner(
+    mode="Server Save" if not BROWSER_DOWNLOAD_MODE else "Browser Download (temporary)",
+    save_dir=DOWNLOAD_DIR,
+    originals_dir=ORIGINALS_DIR,
+    cache_root=CACHE_ROOT,
+    host_url="http://localhost:8000",
+    warning=_startup_warning,
+)
+if BROWSER_DOWNLOAD_MODE:
+    log.info("No save directory set. Use --save-dir or SAVE_DIRECTORY to keep files + build a library.")
 
 
 def cleanup_cache():
@@ -97,7 +183,7 @@ def cleanup_cache():
             if os.path.getmtime(fpath) < (now - datetime.timedelta(hours=2)).timestamp():
                 os.remove(fpath)
     except Exception as e:
-        print(f"Cache cleanup error: {e}")
+        log.warning("Cache cleanup error: %s", e)
 
 
 def cleanup_session(session_id: str):
@@ -106,7 +192,7 @@ def cleanup_session(session_id: str):
         if session_id in download_progress:
             del download_progress[session_id]
     except Exception as e:
-        print(f"Error cleaning up session {session_id}: {e}")
+        log.warning("Error cleaning up session %s: %s", session_id, e)
 
 def get_unique_path(directory: str, filename: str) -> str:
     """
@@ -120,6 +206,68 @@ def get_unique_path(directory: str, filename: str) -> str:
         path = os.path.join(directory, f"{base}_copy{counter}{ext}")
         counter += 1
     return path
+
+# Memoize silence analysis per (video_id, threshold) so toggling Trim Silence
+# or nudging the threshold doesn't re-run an ffmpeg scan every time.
+silence_cache: Dict[str, dict] = {}
+
+
+def sanitize(s: str) -> str:
+    return "".join(c for c in (s or "") if c.isalnum() or c in "._- ,'&").strip()
+
+
+def split_multi(value: Optional[str], delimiter: str = "|") -> list:
+    """Split a delimiter-joined tag string into a clean list."""
+    if not value:
+        return []
+    return [v.strip() for v in value.split(delimiter) if v.strip()]
+
+
+def build_filename(title, album, artist, composer, delimiter="|") -> str:
+    """
+    Build the library filename: "Title (Album) - Artist (Composer).mp3".
+    Shared by /save and the library metadata editor so renames stay consistent.
+    """
+    title = sanitize(title) or "audio"
+    artist = sanitize(artist.replace(delimiter, ', ')) if artist else None
+    album = sanitize(album) if album else None
+    composer = sanitize(composer) if composer else None
+
+    parts = [title]
+    if album:
+        parts[0] = f"{title} ({album})"
+    if artist or composer:
+        right = artist or ''
+        if composer:
+            right = f"{right} ({composer})" if right else composer
+        parts.append(right)
+    return " - ".join(parts) + ".mp3"
+
+
+def sidecar_path_for(video_id: str) -> str:
+    return os.path.join(META_DIR, f"{video_id}.json")
+
+
+def write_sidecar(video_id: str, data: dict):
+    """Atomically write the per-track sidecar JSON."""
+    path = sidecar_path_for(video_id)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+def read_sidecar(video_id: str) -> Optional[dict]:
+    path = sidecar_path_for(video_id)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception as e:
+        log.warning("Failed to read sidecar %s: %s", path, e)
+        return None
+
 
 def precache_with_progress(url: str):
     """
@@ -276,48 +424,30 @@ def save_audio(
                 "progress": round(percent, 1),
             }
 
-        # 3. Generate filename from metadata
-        # Pattern: "Title (Album) - Artist (Composer).mp3"
-        def sanitize(s):
-            return "".join(c for c in s if c.isalnum() or c in "._- ,'&").strip()
-        
-        # Extract composer from metadata_json if provided (since it's a custom tag now)
-        composer_from_json = None
+        # 3. Parse extra metadata (custom tags + cover) once.
+        custom_tags = []
+        thumbnail_base64 = None
         if metadata_json:
             try:
                 extra = json.loads(metadata_json)
-                if 'custom_tags' in extra:
-                    for tag in extra['custom_tags']:
-                        if tag.get('key', '').lower() == 'composer':
-                            composer_from_json = tag.get('value')
-                            break
-            except:
-                pass
+                custom_tags = extra.get('custom_tags', []) or []
+                thumbnail_base64 = extra.get('thumbnail_base64')
+            except Exception as e:
+                log.warning("Failed to parse metadata_json: %s", e)
 
+        composer_from_json = next(
+            (t.get('value') for t in custom_tags
+             if t.get('key', '').lower() == 'composer'), None)
+        composer = meta_composer or composer_from_json
 
-        title = sanitize(meta_title) if meta_title else None
-        # Replace delimiter with comma for filename readability
-        artist = sanitize(meta_artist.replace(delimiter, ', ')) if meta_artist else None
-        album = sanitize(meta_album) if meta_album else None
-        composer = sanitize(meta_composer or composer_from_json) if (meta_composer or composer_from_json) else None
-        
-        if not title:
+        # 4. Build filename "Title (Album) - Artist (Composer).mp3"
+        title_for_name = meta_title
+        if not title_for_name:
             info = get_video_info(url)
-            title = sanitize(info.get('title', video_id))
-        
-        # Build filename: "Title (Album) - Artist (Composer).mp3"
-        parts = [title]
-        if album:
-            parts[0] = f"{title} ({album})"
-        if artist or composer:
-            right = artist or ''
-            if composer:
-                right = f"{right} ({composer})" if right else composer
-            parts.append(right)
-        
-        filename_to_use = " - ".join(parts) + ".mp3"
-        
-        # 4. Determine output directory based on mode
+            title_for_name = info.get('title', video_id)
+        filename_to_use = build_filename(title_for_name, meta_album, meta_artist, composer, delimiter)
+
+        # 5. Determine output directory based on mode
         if BROWSER_DOWNLOAD_MODE:
             # Use temp directory for browser downloads
             output_dir = tempfile.mkdtemp(prefix="yt2mp3_")
@@ -326,32 +456,22 @@ def save_audio(
             # Handle duplicates for server save mode
             final_path = get_unique_path(DOWNLOAD_DIR, filename_to_use)
             output_dir = DOWNLOAD_DIR
-        
+
         final_filename = os.path.basename(final_path)
         output_filename_base = os.path.splitext(final_filename)[0]
 
-        # 5. Build user metadata dict
-        user_metadata = {}
+        # 6. Build user metadata dict for ID3 embedding
+        user_metadata = {'delimiter': delimiter}
         if meta_title: user_metadata['title'] = meta_title
         if meta_artist: user_metadata['artist'] = meta_artist
         if meta_album: user_metadata['album'] = meta_album
         if meta_genre: user_metadata['genre'] = meta_genre
         if meta_year: user_metadata['year'] = meta_year
         if meta_composer: user_metadata['composer'] = meta_composer
-        user_metadata['delimiter'] = delimiter
-        
-        # Parse additional metadata from JSON (custom tags, thumbnail)
-        if metadata_json:
-            try:
-                extra = json.loads(metadata_json)
-                if 'custom_tags' in extra:
-                    user_metadata['custom_tags'] = extra['custom_tags']
-                if 'thumbnail_base64' in extra:
-                    user_metadata['thumbnail_base64'] = extra['thumbnail_base64']
-            except Exception as e:
-                print(f"Warning: Failed to parse metadata_json: {e}")
-        
-        # 6. Download and Process
+        if custom_tags: user_metadata['custom_tags'] = custom_tags
+        if thumbnail_base64: user_metadata['thumbnail_base64'] = thumbnail_base64
+
+        # 7. Download and Process
         output_path = download_youtube_audio(
             url=url,
             output_dir=output_dir,
@@ -371,6 +491,62 @@ def save_audio(
             cache_dir=CACHE_DIR,
             on_progress=on_progress,
         )
+        
+        # Archive + index (save-dir mode only): keep a permanent copy of the
+        # source audio, write a sidecar describing the effects/metadata, and
+        # upsert the DB index. The sidecar is the source of truth; the DB can
+        # be rebuilt from it.
+        if not BROWSER_DOWNLOAD_MODE:
+            try:
+                original_dest = archive_original(CACHE_DIR, video_id, ORIGINALS_DIR)
+                original_rel = (os.path.relpath(original_dest, DOWNLOAD_DIR)
+                                if original_dest else None)
+                duration = get_audio_duration(final_path)
+
+                effects = {
+                    "start_time": start_time, "end_time": end_time,
+                    "trim_silence": False if original else trim_silence,
+                    "silence_thresh": silence_thresh,
+                    "eq_preset": None if original else eq_preset,
+                    "mbc_preset": None if original else mbc_preset,
+                    "enhance_mode": None if original else enhance_mode,
+                    "enhance_intensity": enhance_intensity,
+                    "normalize": False if original else normalize,
+                    "normalize_i": normalize_i,
+                    "original": original,
+                }
+                artists = split_multi(meta_artist, delimiter)
+                genres = split_multi(meta_genre, delimiter)
+                sidecar = {
+                    "schema_version": 1,
+                    "youtube_id": video_id,
+                    "source_url": url,
+                    "rel_path": os.path.relpath(final_path, DOWNLOAD_DIR),
+                    "filename": final_filename,
+                    "original_rel": original_rel,
+                    "duration": duration,
+                    "effects": effects,
+                    "metadata": {
+                        "title": meta_title, "album": meta_album, "year": meta_year,
+                        "composer": meta_composer, "artists": artists, "genres": genres,
+                        "delimiter": delimiter, "custom_tags": custom_tags,
+                    },
+                    "created_at": datetime.datetime.now().isoformat(),
+                    "updated_at": datetime.datetime.now().isoformat(),
+                }
+                write_sidecar(video_id, sidecar)
+
+                db.upsert_audio(
+                    youtube_id=video_id, title=meta_title, album=meta_album,
+                    year=meta_year, duration=duration,
+                    rel_path=sidecar["rel_path"], filename=final_filename,
+                    sidecar_path=f"{video_id}.json", effects=effects,
+                    artists=artists, genres=genres,
+                    custom_fields={t["key"]: t.get("value")
+                                   for t in custom_tags if t.get("key")},
+                )
+            except Exception as e:
+                log.warning("Failed to archive/index metadata: %s", e)
         
         # 7. Final progress update
         download_progress[session_id] = {
@@ -432,7 +608,7 @@ async def download_file(
             if parent_dir.startswith(tempfile.gettempdir()) and os.path.exists(parent_dir):
                 shutil.rmtree(parent_dir)
         except Exception as e:
-            print(f"Failed to cleanup temp dir: {e}")
+            log.warning("Failed to cleanup temp dir: %s", e)
     
     # Schedule cleanup after response is sent
     if background_tasks:
@@ -471,15 +647,7 @@ def stream_audio(
     import hashlib
 
     try:
-        info = get_video_info(url)
-        if info.get('duration', 0) > 1800:
-            raise HTTPException(status_code=403, detail="Preview restricted to videos under 30 minutes.")
-
         video_id = validate_youtube_url(url)
-        try:
-            cache_file = download_to_cache(url, CACHE_DIR)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Could not cache audio. {str(e)}")
 
         # Hash the effect set (NOT range/silence) so identical settings reuse the
         # same rendered file — instant replay and A/B comparison.
@@ -487,15 +655,30 @@ def stream_audio(
         h = hashlib.md5(key.encode()).hexdigest()[:10]
         out = os.path.join(CACHE_DIR, f"prev_{video_id}_{h}.mp3")
 
-        if not (os.path.exists(out) and os.path.getsize(out) > 1024):
-            process_audio(
-                cache_file, out, total_duration=None, progress_cb=None,
-                eq_preset=eq_preset, mbc_preset=mbc_preset,
-                enhance_mode=enhance_mode, enhance_intensity=enhance_intensity,
-                normalize=normalize, normalize_i=normalize_i,
-                original=original, trim_silence=False,
-            )
+        # Fast path: this combo was already rendered — serve it straight away.
+        # No yt-dlp metadata call, no ffprobe, no re-encode. This is what makes
+        # A/B switching snappy (the old code did a network get_video_info every
+        # time, adding several seconds per switch).
+        if os.path.exists(out) and os.path.getsize(out) > 1024:
+            return FileResponse(out, media_type="audio/mpeg")
 
+        # First render of this combo: ensure the source is cached, then gate on
+        # duration read from the LOCAL file (avoids the slow network metadata call).
+        try:
+            cache_file = download_to_cache(url, CACHE_DIR)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Could not cache audio. {str(e)}")
+
+        if (get_audio_duration(cache_file) or 0) > 1800:
+            raise HTTPException(status_code=403, detail="Preview restricted to videos under 30 minutes.")
+
+        process_audio(
+            cache_file, out, total_duration=None, progress_cb=None,
+            eq_preset=eq_preset, mbc_preset=mbc_preset,
+            enhance_mode=enhance_mode, enhance_intensity=enhance_intensity,
+            normalize=normalize, normalize_i=normalize_i,
+            original=original, trim_silence=False,
+        )
         return FileResponse(out, media_type="audio/mpeg")
     except HTTPException:
         raise
@@ -537,14 +720,256 @@ def silence_info(
     from youtube_downloader import download_to_cache, get_silence_offsets
     import traceback
     try:
+        video_id = validate_youtube_url(url)
+        ckey = f"{video_id}|{silence_thresh}"
+        if ckey in silence_cache:
+            return silence_cache[ckey]
         cache_file = download_to_cache(url, CACHE_DIR)
         start, end = get_silence_offsets(cache_file, silence_thresh=silence_thresh)
-        return {"leading_silence": start, "trailing_silence": end}
+        result = {"leading_silence": start, "trailing_silence": end}
+        silence_cache[ckey] = result
+        return result
     except Exception as e:
         # Log the error but return defaults so playback can continue
-        print(f"WARN: silence-info failed for {url}: {e}")
+        log.warning("silence-info failed for %s: %s", url, e)
         traceback.print_exc()
         return {"leading_silence": 0, "trailing_silence": 0}
+
+
+# ---------------------------------------------------------------------------
+# Library / archive endpoints (save-dir mode only) + tag suggestions.
+# ---------------------------------------------------------------------------
+
+def _require_library():
+    if BROWSER_DOWNLOAD_MODE:
+        raise HTTPException(status_code=404,
+                            detail="Library is only available in save-directory mode.")
+
+
+def _abs(rel_path: str) -> str:
+    return os.path.join(DOWNLOAD_DIR, rel_path)
+
+
+@app.get("/library")
+def library_list():
+    """List every saved track (newest first)."""
+    _require_library()
+    return {"items": db.get_library()}
+
+
+@app.get("/library/{audio_id}")
+def library_detail(audio_id: int):
+    _require_library()
+    detail = db.get_audio_detail(audio_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Track not found")
+    return detail
+
+
+@app.post("/library/rebuild")
+def library_rebuild():
+    """Re-index the DB from the on-disk sidecars."""
+    _require_library()
+    n = db.rebuild_from_sidecars(META_DIR, DOWNLOAD_DIR)
+    return {"indexed": n}
+
+
+@app.patch("/library/{audio_id}")
+def library_patch(audio_id: int, payload: dict = Body(...)):
+    """
+    Edit metadata only: re-tag the MP3 in place (no re-download / no FFmpeg),
+    rename the file if the name-deriving fields changed, and update the sidecar
+    + DB index.
+    """
+    _require_library()
+    detail = db.get_audio_detail(audio_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    video_id = detail["youtube_id"]
+    sidecar = read_sidecar(video_id) or {}
+    delimiter = payload.get("delimiter") or sidecar.get("metadata", {}).get("delimiter", "|")
+
+    title = payload.get("title", detail.get("title"))
+    album = payload.get("album", detail.get("album"))
+    year = payload.get("year", detail.get("year"))
+    artists = payload.get("artists", detail.get("artists", []))
+    genres = payload.get("genres", detail.get("genres", []))
+    custom_tags = payload.get("custom_tags")
+    if custom_tags is None:
+        custom_tags = [{"key": k, "value": v} for k, v in detail.get("custom_fields", {}).items()]
+    composer = next((t.get("value") for t in custom_tags
+                     if t.get("key", "").lower() == "composer"), None)
+
+    artist_str = delimiter.join(artists) if artists else None
+    genre_str = delimiter.join(genres) if genres else None
+
+    old_rel = detail.get("rel_path")
+    old_abs = _abs(old_rel) if old_rel else None
+
+    # Rename if the filename-deriving fields changed.
+    new_filename = build_filename(title, album, artist_str, composer, delimiter)
+    new_abs = old_abs
+    if old_abs and os.path.basename(old_abs) != new_filename:
+        new_abs = get_unique_path(DOWNLOAD_DIR, new_filename)
+        try:
+            os.rename(old_abs, new_abs)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Rename failed: {e}")
+    new_filename = os.path.basename(new_abs) if new_abs else new_filename
+    new_rel = os.path.relpath(new_abs, DOWNLOAD_DIR) if new_abs else old_rel
+
+    # Re-tag in place. Cover: only supply a new one if the client sent it;
+    # otherwise the existing embedded cover is preserved.
+    user_metadata = {"delimiter": delimiter}
+    if title: user_metadata["title"] = title
+    if artist_str: user_metadata["artist"] = artist_str
+    if album: user_metadata["album"] = album
+    if genre_str: user_metadata["genre"] = genre_str
+    if year: user_metadata["year"] = year
+    if composer: user_metadata["composer"] = composer
+    if custom_tags: user_metadata["custom_tags"] = custom_tags
+    if payload.get("thumbnail_base64"): user_metadata["thumbnail_base64"] = payload["thumbnail_base64"]
+
+    eff = sidecar.get("effects", detail.get("effects", {})) or {}
+    if new_abs and os.path.exists(new_abs):
+        try:
+            retag_mp3_in_place(
+                new_abs, source_url=sidecar.get("source_url", ""),
+                user_metadata=user_metadata,
+                eq_preset=eff.get("eq_preset"), mbc_preset=eff.get("mbc_preset"),
+                normalize=eff.get("normalize", False), normalize_i=eff.get("normalize_i", -16.0),
+                enhance_mode=eff.get("enhance_mode"), trim_silence=eff.get("trim_silence", False),
+                original=eff.get("original", False),
+            )
+        except Exception as e:
+            log.warning("re-tag failed: %s", e)
+
+    # Persist sidecar + DB.
+    sidecar.setdefault("youtube_id", video_id)
+    sidecar["rel_path"] = new_rel
+    sidecar["filename"] = new_filename
+    sidecar["metadata"] = {
+        "title": title, "album": album, "year": year, "composer": composer,
+        "artists": artists, "genres": genres, "delimiter": delimiter,
+        "custom_tags": custom_tags,
+    }
+    sidecar["updated_at"] = datetime.datetime.now().isoformat()
+    write_sidecar(video_id, sidecar)
+
+    db.upsert_audio(
+        youtube_id=video_id, title=title, album=album, year=year,
+        duration=sidecar.get("duration", detail.get("duration")),
+        rel_path=new_rel, filename=new_filename, sidecar_path=f"{video_id}.json",
+        effects=eff, artists=artists, genres=genres,
+        custom_fields={t["key"]: t.get("value") for t in custom_tags if t.get("key")},
+    )
+    return db.get_audio_detail(audio_id)
+
+
+@app.post("/library/{audio_id}/reprocess")
+def library_reprocess(audio_id: int, payload: dict = Body(...)):
+    """
+    Rebuild the MP3 from the archived original with a new effect set, keeping
+    the existing metadata. Requires the archived original to exist.
+    """
+    _require_library()
+    detail = db.get_audio_detail(audio_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    video_id = detail["youtube_id"]
+    original_path = find_original(ORIGINALS_DIR, video_id)
+    if not original_path:
+        raise HTTPException(status_code=409,
+                            detail="No archived original — cannot reprocess this track.")
+
+    sidecar = read_sidecar(video_id) or {}
+    prev_eff = sidecar.get("effects", detail.get("effects", {})) or {}
+    # Merge incoming effect overrides over the stored set.
+    effects = {**prev_eff, **{k: v for k, v in payload.items() if k in (
+        "start_time", "end_time", "trim_silence", "silence_thresh", "eq_preset",
+        "mbc_preset", "enhance_mode", "enhance_intensity", "normalize",
+        "normalize_i", "original")}}
+
+    meta = sidecar.get("metadata", {})
+    delimiter = meta.get("delimiter", "|")
+    artists = meta.get("artists", detail.get("artists", []))
+    genres = meta.get("genres", detail.get("genres", []))
+    custom_tags = meta.get("custom_tags",
+                           [{"key": k, "value": v} for k, v in detail.get("custom_fields", {}).items()])
+    composer = next((t.get("value") for t in custom_tags
+                     if t.get("key", "").lower() == "composer"), meta.get("composer"))
+
+    user_metadata = {"delimiter": delimiter}
+    if meta.get("title") or detail.get("title"):
+        user_metadata["title"] = meta.get("title") or detail.get("title")
+    if artists: user_metadata["artist"] = delimiter.join(artists)
+    if meta.get("album") or detail.get("album"):
+        user_metadata["album"] = meta.get("album") or detail.get("album")
+    if genres: user_metadata["genre"] = delimiter.join(genres)
+    if meta.get("year") or detail.get("year"):
+        user_metadata["year"] = meta.get("year") or detail.get("year")
+    if composer: user_metadata["composer"] = composer
+    if custom_tags: user_metadata["custom_tags"] = custom_tags
+
+    target = _abs(detail["rel_path"])
+    try:
+        reprocess_from_original(
+            original_path, target, source_url=sidecar.get("source_url", ""),
+            effects=effects, user_metadata=user_metadata,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Reprocess failed: {e}")
+
+    sidecar["effects"] = effects
+    sidecar["updated_at"] = datetime.datetime.now().isoformat()
+    write_sidecar(video_id, sidecar)
+    db.upsert_audio(
+        youtube_id=video_id, title=detail.get("title"), album=detail.get("album"),
+        year=detail.get("year"), duration=detail.get("duration"),
+        rel_path=detail["rel_path"], filename=detail.get("filename"),
+        sidecar_path=f"{video_id}.json", effects=effects,
+        artists=artists, genres=genres,
+        custom_fields={t["key"]: t.get("value") for t in custom_tags if t.get("key")},
+    )
+    return db.get_audio_detail(audio_id)
+
+
+@app.delete("/library/{audio_id}")
+def library_delete(audio_id: int, purge_original: bool = Query(False)):
+    """Delete a track: removes the MP3 + sidecar (+ original if purge_original)."""
+    _require_library()
+    row = db.delete_audio(audio_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Track not found")
+    video_id = row["youtube_id"]
+    for path in filter(None, [
+        _abs(row["rel_path"]) if row.get("rel_path") else None,
+        sidecar_path_for(video_id),
+    ]):
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception as e:
+            log.warning("Failed to delete %s: %s", path, e)
+    if purge_original:
+        orig = find_original(ORIGINALS_DIR, video_id)
+        if orig and os.path.exists(orig):
+            try:
+                os.remove(orig)
+            except Exception as e:
+                log.warning("Failed to delete original %s: %s", orig, e)
+    return {"deleted": True}
+
+
+@app.get("/suggestions")
+def suggestions(kind: str = Query(...), q: str = Query("")):
+    """Artist/genre autocomplete sourced from previously saved tags."""
+    if kind not in ("artist", "genre"):
+        raise HTTPException(status_code=422, detail="kind must be 'artist' or 'genre'")
+    return {"suggestions": db.suggest_tags(kind, q)}
+
 
 if __name__ == "__main__":
     import uvicorn

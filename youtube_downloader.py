@@ -6,11 +6,21 @@ Provides functionality to validate YouTube URLs and download audio as high-quali
 
 import re
 import os
+import glob
+import json
+import shutil
+from io import BytesIO
 from urllib.parse import urlparse, parse_qs
 from typing import Optional
 import yt_dlp
 import threading
 from weakref import WeakValueDictionary
+
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
 
 
 # Global lock manager for downloads to prevent race conditions
@@ -519,14 +529,62 @@ def get_silence_offsets(audio_path: str, silence_thresh: float = -40.0):
         return start_ms / 1000.0, end_ms / 1000.0
     except Exception as e:
         print(f"Error getting silence offsets for {audio_path}: {e}")
-        # If file is corrupted, try to remove it if it's in the cache
+        # If file is corrupted, try to remove it — but only from the working
+        # cache, never from the permanent originals archive.
         try:
-            if "/yt2mp3_cache/" in audio_path and os.path.exists(audio_path):
+            p = audio_path.lower()
+            in_cache = (("yt2mp3" in p or "youtify" in p or "cache" in p
+                         or f"{os.sep}work{os.sep}" in audio_path)
+                        and f"{os.sep}originals{os.sep}" not in audio_path)
+            if in_cache and os.path.exists(audio_path):
                 os.remove(audio_path)
                 print(f"Removed corrupted cache file: {audio_path}")
-        except:
+        except Exception:
             pass
         return 0.0, 0.0
+
+
+def _sniff_mime(data: bytes) -> str:
+    """Best-effort image MIME from magic bytes (fallback when Pillow absent)."""
+    if data[:4] == b'\x89PNG':
+        return 'image/png'
+    if data[:4] == b'RIFF':
+        return 'image/webp'
+    return 'image/jpeg'
+
+
+def normalize_cover(raw: bytes, max_side: int = 1000):
+    """
+    Standardize cover art for embedding: convert to JPEG, keep aspect ratio
+    (no crop, no distortion), cap the longest side at max_side. This avoids the
+    webp/format/resolution issues some players (incl. Jellyfin) hit with raw
+    YouTube thumbnails.
+
+    Returns (bytes, mime). Falls back to (raw, sniffed_mime) if Pillow is
+    unavailable or the image can't be decoded.
+    """
+    if not raw:
+        return None, 'image/jpeg'
+    if not PIL_AVAILABLE:
+        return raw, _sniff_mime(raw)
+    try:
+        img = Image.open(BytesIO(raw))
+        # Flatten alpha/palette onto white so JPEG is valid.
+        if img.mode in ('RGBA', 'LA', 'P'):
+            img = img.convert('RGBA')
+            bg = Image.new('RGB', img.size, (255, 255, 255))
+            bg.paste(img, mask=img.split()[-1])
+            img = bg
+        else:
+            img = img.convert('RGB')
+        # thumbnail() only downscales and preserves aspect ratio.
+        img.thumbnail((max_side, max_side), Image.LANCZOS)
+        buf = BytesIO()
+        img.save(buf, format='JPEG', quality=88, optimize=True)
+        return buf.getvalue(), 'image/jpeg'
+    except Exception as e:
+        print(f"Warning: cover normalization failed, embedding raw: {e}")
+        return raw, _sniff_mime(raw)
 
 
 def embed_custom_metadata(
@@ -540,7 +598,8 @@ def embed_custom_metadata(
     trim_silence: bool = False,
     original: bool = False,
     thumbnail_path: Optional[str] = None,
-    user_metadata: Optional[dict] = None
+    user_metadata: Optional[dict] = None,
+    replace: bool = True
 ):
     """
     Embeds metadata into an MP3 file using mutagen (ID3 tags).
@@ -571,7 +630,23 @@ def embed_custom_metadata(
             audio.add_tags()
         
         tags = audio.tags
-        
+
+        # On a re-tag we wipe every existing frame first — APIC/TXXX/COMM are
+        # keyed by `desc`, so a plain add() would let stale custom tags or a
+        # second cover accumulate. Carry the existing cover forward when the
+        # caller didn't supply a new one, so re-tagging never drops album art.
+        carried_cover = None
+        if replace and tags is not None:
+            if not (user_metadata.get('thumbnail_base64') or
+                    user_metadata.get('youtube_thumbnail_data')):
+                apic = tags.getall('APIC')
+                if apic:
+                    carried_cover = apic[0]
+            # clear() wipes frames in memory; the single audio.save() below
+            # persists. (delete() would hit the file immediately and needs a
+            # filename the freshly-created tag object doesn't have.)
+            tags.clear()
+
         # Standard ID3 tags
         if user_metadata.get('title'):
             tags.add(TIT2(encoding=3, text=user_metadata['title']))
@@ -619,50 +694,140 @@ def embed_custom_metadata(
                 else:
                     tags.add(TXXX(encoding=3, desc=key, text=value))
         
-        # Cover art - custom upload takes priority over YouTube thumbnail
-        cover_data = None
-        cover_mime = 'image/jpeg'
-        
+        # Cover art - custom upload takes priority over YouTube thumbnail.
+        # All art is normalized to JPEG (aspect kept, capped ~1000px) so
+        # players like Jellyfin get a consistent, well-formed cover.
+        raw_cover = None
         if user_metadata.get('thumbnail_base64'):
             try:
-                cover_data = base64.b64decode(user_metadata['thumbnail_base64'])
-                if cover_data[:4] == b'\x89PNG':
-                    cover_mime = 'image/png'
-                elif cover_data[:4] == b'RIFF':
-                    cover_mime = 'image/webp'
+                raw_cover = base64.b64decode(user_metadata['thumbnail_base64'])
             except Exception as e:
                 print(f"Warning: Custom thumbnail decode failed: {e}")
-                cover_data = None
-        
-        
-        if not cover_data and user_metadata.get('youtube_thumbnail_data'):
-            try:
-                cover_data = user_metadata['youtube_thumbnail_data']
-                # Detect MIME type from data
-                if cover_data[:4] == b'\x89PNG':
-                    cover_mime = 'image/png'
-                elif cover_data[:4] == b'RIFF':
-                    cover_mime = 'image/webp'
-                elif cover_data[:2] == b'\xff\xd8':
-                    cover_mime = 'image/jpeg'
-            except Exception as e:
-                print(f"Warning: Could not process YouTube thumbnail: {e}")
-        
-        
-        if cover_data:
-            tags.add(APIC(
-                encoding=3,
-                mime=cover_mime,
-                type=3,  # Cover (front)
-                desc='Cover',
-                data=cover_data
-            ))
-        
+                raw_cover = None
+        if not raw_cover and user_metadata.get('youtube_thumbnail_data'):
+            raw_cover = user_metadata['youtube_thumbnail_data']
+
+        if raw_cover:
+            cover_data, cover_mime = normalize_cover(raw_cover)
+            if cover_data:
+                tags.add(APIC(encoding=3, mime=cover_mime, type=3,
+                              desc='Cover', data=cover_data))
+        elif carried_cover is not None:
+            # No new cover supplied on a re-tag — keep the existing one.
+            tags.add(carried_cover)
+
         audio.save()
         print(f"Metadata embedded successfully into {audio_path}")
         
     except Exception as e:
         print(f"Error embedding metadata with mutagen: {e}")
+
+
+def find_cache_file(cache_dir: str, video_id: str) -> Optional[str]:
+    """Return the cached bestaudio path for a video_id, or None."""
+    for f in glob.glob(os.path.join(cache_dir, f"{video_id}.*")):
+        if os.path.exists(f) and os.path.getsize(f) > 1024:
+            return f
+    return None
+
+
+def archive_original(cache_dir: str, video_id: str, originals_dir: str) -> Optional[str]:
+    """
+    Copy the cached source audio into the permanent originals store so a track
+    can be reprocessed later without re-downloading. Copy (not move) — the cache
+    is still used for previews. Returns the originals path, or None if no cache.
+    """
+    src = find_cache_file(cache_dir, video_id)
+    if not src:
+        return None
+    os.makedirs(originals_dir, exist_ok=True)
+    ext = os.path.splitext(src)[1]
+    dest = os.path.join(originals_dir, f"{video_id}{ext}")
+    if not os.path.exists(dest):
+        shutil.copy2(src, dest)
+    return dest
+
+
+def find_original(originals_dir: str, video_id: str) -> Optional[str]:
+    """Return the archived original audio path for a video_id, or None."""
+    for f in glob.glob(os.path.join(originals_dir, f"{video_id}.*")):
+        if os.path.exists(f):
+            return f
+    return None
+
+
+def retag_mp3_in_place(mp3_path: str, source_url: str, user_metadata: dict, *,
+                       eq_preset=None, mbc_preset=None, normalize=False,
+                       normalize_i=-16.0, enhance_mode=None, trim_silence=False,
+                       original=False):
+    """
+    Rewrite ID3 tags + cover on an existing MP3 without touching the audio
+    (no re-download, no FFmpeg). Used by the library metadata editor.
+    """
+    embed_custom_metadata(
+        mp3_path, source_url=source_url,
+        eq_preset=eq_preset, mbc_preset=mbc_preset, normalize=normalize,
+        normalize_i=normalize_i, enhance_mode=enhance_mode,
+        trim_silence=trim_silence, original=original,
+        user_metadata=user_metadata, replace=True,
+    )
+
+
+def reprocess_from_original(original_path: str, output_path: str, *, source_url: str,
+                            effects: dict, user_metadata: dict,
+                            progress_cb: Optional[callable] = None) -> str:
+    """
+    Rebuild a processed MP3 from an archived original with a new effect set,
+    then embed metadata. Writes to a temp file and atomically replaces
+    output_path so a failed render never corrupts the library file.
+    """
+    eff = effects or {}
+    user_metadata = dict(user_metadata or {})
+
+    # The cover lives in the existing MP3, not the sidecar — carry it forward so
+    # a reprocess doesn't strip album art. (Skipped if the caller supplies one.)
+    if not (user_metadata.get('thumbnail_base64') or
+            user_metadata.get('youtube_thumbnail_data')) and os.path.exists(output_path):
+        try:
+            from mutagen.id3 import ID3
+            apics = ID3(output_path).getall('APIC')
+            if apics:
+                user_metadata['youtube_thumbnail_data'] = apics[0].data
+        except Exception as e:
+            print(f"Warning: could not read existing cover for reprocess: {e}")
+
+    start_time = eff.get('start_time')
+    end_time = eff.get('end_time')
+    src_duration = get_audio_duration(original_path)
+    if start_time is not None or end_time is not None:
+        clip_end = end_time if end_time is not None else (src_duration or 0)
+        total_duration = max(0.0, clip_end - (start_time or 0)) or None
+    else:
+        total_duration = src_duration
+
+    tmp_out = output_path + ".tmp.mp3"
+    process_audio(
+        original_path, tmp_out, total_duration=total_duration, progress_cb=progress_cb,
+        start_time=start_time, end_time=end_time,
+        eq_preset=eff.get('eq_preset'), mbc_preset=eff.get('mbc_preset'),
+        enhance_mode=eff.get('enhance_mode'), enhance_intensity=eff.get('enhance_intensity', 1.5),
+        normalize=eff.get('normalize', True), normalize_i=eff.get('normalize_i', -16.0),
+        original=eff.get('original', False), trim_silence=eff.get('trim_silence', False),
+        silence_thresh=eff.get('silence_thresh', -40.0),
+    )
+    orig = eff.get('original', False)
+    embed_custom_metadata(
+        tmp_out, source_url=source_url,
+        eq_preset=None if orig else eff.get('eq_preset'),
+        mbc_preset=None if orig else eff.get('mbc_preset'),
+        normalize=False if orig else eff.get('normalize', True),
+        normalize_i=eff.get('normalize_i', -16.0),
+        enhance_mode=None if orig else eff.get('enhance_mode'),
+        trim_silence=False if orig else eff.get('trim_silence', False),
+        original=orig, user_metadata=user_metadata, replace=True,
+    )
+    os.replace(tmp_out, output_path)
+    return output_path
 
 
 def download_to_cache(url: str, cache_dir: str, progress_cb: Optional[callable] = None) -> str:

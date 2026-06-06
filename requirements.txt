@@ -4,3 +4,4 @@ uvicorn
 pydub
 audioop-lts
 mutagen
+Pillow
