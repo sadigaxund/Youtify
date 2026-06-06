@@ -1060,6 +1060,12 @@
                 <span>Search</span>
             </button>
 
+            <!-- Library (server-save mode only; shown after config check) -->
+            <button id="libraryBtn" style="display:none; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin-top:0.5rem;">
+                <i data-lucide="library"></i>
+                <span>Library</span>
+            </button>
+
             <div id="preview" class="preview">
                 <div class="preview-card">
                     <img id="thumb" class="thumbnail" src="" alt="Thumbnail">
@@ -1374,6 +1380,62 @@
                 <i data-lucide="alert-circle" class="toast-icon"></i>
                 <div class="toast-text">
                     <p id="errorToastMsg" class="toast-title">...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================ Library ============================ -->
+        <div id="libraryModal" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.7); backdrop-filter:blur(4px); overflow-y:auto; padding:2rem 1rem;">
+            <div style="max-width:760px; margin:0 auto; background:var(--card-bg, #15151c); border:1px solid var(--card-border); border-radius:16px; padding:1.25rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                    <h2 style="margin:0; font-size:1.1rem;">Library</h2>
+                    <div style="display:flex; gap:0.5rem;">
+                        <button id="libRefreshBtn" type="button" style="width:auto; padding:0.4rem 0.8rem; font-size:0.78rem; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin:0;">Rebuild index</button>
+                        <button id="libCloseBtn" type="button" style="width:auto; padding:0.4rem 0.8rem; font-size:0.78rem; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin:0;">Close</button>
+                    </div>
+                </div>
+                <input type="text" id="libSearch" placeholder="Filter…" style="margin-bottom:0.75rem; padding:0.5rem 0.7rem; font-size:0.85rem; border-radius:8px;">
+                <div id="libList" style="display:flex; flex-direction:column; gap:0.4rem;"></div>
+                <p id="libEmpty" style="display:none; opacity:0.6; text-align:center; padding:2rem 0; font-size:0.85rem;">No saved tracks yet.</p>
+            </div>
+        </div>
+
+        <!-- Library item editor (metadata re-tag OR effects reprocess) -->
+        <div id="libEditModal" style="display:none; position:fixed; inset:0; z-index:1001; background:rgba(0,0,0,0.75); backdrop-filter:blur(4px); overflow-y:auto; padding:2rem 1rem;">
+            <div style="max-width:560px; margin:0 auto; background:var(--card-bg, #15151c); border:1px solid var(--card-border); border-radius:16px; padding:1.25rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+                    <h2 id="libEditTitle" style="margin:0; font-size:1rem;">Edit</h2>
+                    <button id="libEditCloseBtn" type="button" style="width:auto; padding:0.35rem 0.7rem; font-size:0.78rem; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin:0;">Close</button>
+                </div>
+                <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
+                    <button id="libTabMeta" type="button" class="lib-tab" style="flex:1; padding:0.45rem; font-size:0.8rem; margin:0;">Metadata</button>
+                    <button id="libTabFx" type="button" class="lib-tab" style="flex:1; padding:0.45rem; font-size:0.8rem; margin:0; background:rgba(255,255,255,0.05); border:1px solid var(--card-border);">Effects</button>
+                </div>
+
+                <!-- Metadata pane -->
+                <div id="libPaneMeta" style="display:flex; flex-direction:column; gap:0.55rem;">
+                    <label style="font-size:0.7rem; opacity:0.7;">Title</label>
+                    <input type="text" id="libTitle" style="padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;">
+                    <label style="font-size:0.7rem; opacity:0.7;">Artists (comma separated)</label>
+                    <input type="text" id="libArtists" style="padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;">
+                    <label style="font-size:0.7rem; opacity:0.7;">Genres (comma separated)</label>
+                    <input type="text" id="libGenres" style="padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;">
+                    <div style="display:flex; gap:0.5rem;">
+                        <div style="flex:2;"><label style="font-size:0.7rem; opacity:0.7;">Album</label>
+                            <input type="text" id="libAlbum" style="width:100%; padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;"></div>
+                        <div style="flex:1;"><label style="font-size:0.7rem; opacity:0.7;">Year</label>
+                            <input type="text" id="libYear" style="width:100%; padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;"></div>
+                    </div>
+                    <label style="font-size:0.7rem; opacity:0.7;">Composer</label>
+                    <input type="text" id="libComposer" style="padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;">
+                    <button id="libSaveMeta" type="button" style="margin-top:0.5rem;">Save metadata (re-tag in place)</button>
+                </div>
+
+                <!-- Effects pane (controls cloned from main UI at runtime) -->
+                <div id="libPaneFx" style="display:none; flex-direction:column; gap:0.55rem;">
+                    <div id="libFxControls" style="display:flex; flex-direction:column; gap:0.55rem;"></div>
+                    <p id="libFxNoOriginal" style="display:none; opacity:0.7; font-size:0.78rem; color:var(--primary);">No archived original for this track — cannot reprocess.</p>
+                    <button id="libReprocess" type="button" style="margin-top:0.5rem;">Rebuild file with these effects</button>
                 </div>
             </div>
         </div>
@@ -1693,7 +1755,7 @@
             function genreCandidates() {
                 const seen = new Set();
                 const out = [];
-                [...HIST.load(HIST.GENRES), ...GENRE_SEED].forEach(g => {
+                [...remoteGenres, ...HIST.load(HIST.GENRES), ...GENRE_SEED].forEach(g => {
                     const k = g.toLowerCase();
                     if (!seen.has(k)) { seen.add(k); out.push(g); }
                 });
@@ -1701,6 +1763,41 @@
             }
             let selectedGenres = [];
             let selectedArtists = [];
+
+            // --- Backend tag suggestions (merge with localStorage) ---
+            // The server suggests artists/genres seen in previously saved tracks
+            // (save-dir mode). localStorage stays as an offline fallback. Results
+            // are debounced and, when they arrive, re-render the open dropdown.
+            let remoteArtists = [];
+            let remoteGenres = [];
+            function debounce(fn, ms) {
+                let t;
+                return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+            }
+            async function fetchSuggest(kind, q, onResult) {
+                try {
+                    const res = await fetch(`/suggestions?kind=${kind}&q=${encodeURIComponent(q || '')}`);
+                    if (!res.ok) return; // 404 in browser-download mode -> just use localStorage
+                    const data = await res.json();
+                    onResult(data.suggestions || []);
+                } catch (e) { /* offline -> localStorage only */ }
+            }
+            const fetchArtistSuggest = debounce((q) => fetchSuggest('artist', q, (s) => {
+                remoteArtists = s;
+                if (document.activeElement === els.artistInput) showArtistDropdown(els.artistInput.value);
+            }), 150);
+            const fetchGenreSuggest = debounce((q) => fetchSuggest('genre', q, (s) => {
+                remoteGenres = s;
+                if (document.activeElement === els.genreInput) showGenreDropdown(els.genreInput.value);
+            }), 150);
+            function mergeUnique(...lists) {
+                const seen = new Set(), out = [];
+                for (const list of lists) for (const v of list) {
+                    const k = (v || '').toLowerCase();
+                    if (v && !seen.has(k)) { seen.add(k); out.push(v); }
+                }
+                return out;
+            }
 
             // --- Artist Multi-Tag Input ---
             function renderArtistTags() {
@@ -1740,7 +1837,7 @@
                 const dd = els.artistDropdown;
                 dd.innerHTML = '';
                 const lf = filter.toLowerCase();
-                const matches = HIST.load(HIST.ARTISTS).filter(a =>
+                const matches = mergeUnique(remoteArtists, HIST.load(HIST.ARTISTS)).filter(a =>
                     !selectedArtists.includes(a) && a.toLowerCase().includes(lf)
                 ).slice(0, 12);
 
@@ -1775,8 +1872,8 @@
                 els.artistInput.value = t.textContent;
             }
 
-            els.artistInput.addEventListener('input', () => showArtistDropdown(els.artistInput.value));
-            els.artistInput.addEventListener('focus', () => showArtistDropdown(els.artistInput.value));
+            els.artistInput.addEventListener('input', () => { fetchArtistSuggest(els.artistInput.value); showArtistDropdown(els.artistInput.value); });
+            els.artistInput.addEventListener('focus', () => { fetchArtistSuggest(els.artistInput.value); showArtistDropdown(els.artistInput.value); });
             els.artistInput.addEventListener('keydown', (e) => {
                 const items = els.artistDropdown.getElementsByClassName('artist-item');
                 if (e.key === 'ArrowDown') {
@@ -1939,8 +2036,8 @@
                 currentGenreFocus = -1;
             }
 
-            els.genreInput.addEventListener('input', () => showGenreDropdown(els.genreInput.value));
-            els.genreInput.addEventListener('focus', () => showGenreDropdown(els.genreInput.value));
+            els.genreInput.addEventListener('input', () => { fetchGenreSuggest(els.genreInput.value); showGenreDropdown(els.genreInput.value); });
+            els.genreInput.addEventListener('focus', () => { fetchGenreSuggest(els.genreInput.value); showGenreDropdown(els.genreInput.value); });
             els.genreInput.addEventListener('blur', () => setTimeout(hideGenreDropdown, 150));
             els.genreInput.addEventListener('keydown', (e) => {
                 const dd = els.genreDropdown;
@@ -2029,10 +2126,10 @@
 
                 // Range changes no longer stop playback (full-file model). Just keep
                 // the playhead inside the new window.
-                if (!els.previewAudio.paused) {
-                    const cur = els.previewAudio.currentTime;
+                if (!activeAudio.paused) {
+                    const cur = activeAudio.currentTime;
                     if (cur < start || cur > end) {
-                        try { els.previewAudio.currentTime = start; } catch (e) { }
+                        try { activeAudio.currentTime = start; } catch (e) { }
                     }
                 }
             }
@@ -2059,7 +2156,7 @@
                 els.playbackPointer.style.display = 'block';
                 els.playbackPointer.style.left = (pct * 100) + '%';
                 els.currentTimeDisplay.textContent = formatTime(t);
-                if (currentSrc) { try { els.previewAudio.currentTime = t; } catch (e) { } }
+                if (currentSrc) { try { activeAudio.currentTime = t; } catch (e) { } }
             });
 
             // Manual time editing — accepts ss, mm:ss, or h:mm:ss; clamps; reformats.
@@ -2086,7 +2183,10 @@
                         els.endSlider.value = Math.max(secs, rangeStart() + 1);
                     }
                     updateRangeUI();
-                    updateSilenceVisualization();
+                    // NB: do NOT re-run silence analysis here. Silence offsets
+                    // depend only on the source + threshold, not the chosen
+                    // range, so editing Start/End must not trigger /silence-info
+                    // (that re-ran an ffmpeg scan on every blur — the lag).
                 };
                 el.addEventListener('blur', commit);
                 el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } });
@@ -2256,13 +2356,13 @@
             // current position; otherwise the next Play picks it up. Clears any
             // active A/B snapshot selection (you're now on the live controls).
             function onEffectChange() {
-                if (!els.previewAudio.paused) {
+                if (!activeAudio.paused) {
                     // You're hearing this combo live, so snapshot it too — same as
                     // pressing Play. Keeps the A/B list consistent with playback.
                     const p = effectParams();
                     recordSnapshot(p);
                     renderSnapshots();
-                    playPreview(previewUrlFrom(p), els.previewAudio.currentTime);
+                    playPreview(previewUrlFrom(p), activeAudio.currentTime);
                 } else {
                     // Not playing: no audio heard yet, so don't snapshot — just drop
                     // the active highlight (controls no longer match a saved combo).
@@ -2283,19 +2383,102 @@
             // maps 1:1 to the timeline and seeking/looping is trivial.
             let currentSrc = '';   // /stream URL currently loaded (per effect set)
 
+            // --- Dual-element crossfade for gap-free A/B switching ---
+            // A second <audio> lets a new combo fade in while the old fades out,
+            // so flipping snapshots never has a moment of silence. UI events bind
+            // to both elements but only act on whichever is `activeAudio`.
+            let activeAudio = els.previewAudio;
+            let idleAudio = els.previewAudio.cloneNode(true);
+            idleAudio.removeAttribute('id');
+            els.previewAudio.parentNode.appendChild(idleAudio);
+            const XFADE_MS = 180;
+            const SYNC_LEAD = 0.06;   // s of head-start to cover play-start latency (kills the echo/flam)
+            let fadeRAF = null;
+            let loadToken = 0;   // guards against stale loads when switching fast
+
+            function crossfade(elUp, elDown) {
+                if (fadeRAF) cancelAnimationFrame(fadeRAF);
+                const t0 = performance.now();
+                try { elUp.volume = 0; } catch (e) { }
+                (function step(now) {
+                    const k = Math.min(1, (now - t0) / XFADE_MS);
+                    try { elUp.volume = k; if (elDown) elDown.volume = 1 - k; } catch (e) { }
+                    if (k < 1) { fadeRAF = requestAnimationFrame(step); }
+                    else {
+                        fadeRAF = null;
+                        try { elUp.volume = 1; } catch (e) { }
+                        if (elDown) { try { elDown.pause(); elDown.volume = 1; } catch (e) { } }
+                    }
+                })(performance.now());
+            }
+
+            function bindAudioEvents(a) {
+                a.addEventListener('error', () => {
+                    if (!a.src || a.src === window.location.href) return;
+                    if (a !== activeAudio) return;   // ignore the idle buffer
+                    showError("Preview error: " + (a.error ? a.error.message : "source failure"));
+                    isStreaming = false;
+                    stopPlayback();
+                });
+                a.addEventListener('playing', () => {
+                    if (a !== activeAudio) return;
+                    isStreaming = false;
+                    setLoading(els.previewBtn, false);
+                    els.previewBtn.classList.add('playing');
+                    els.previewBtn.dataset.loading = "";
+                    setIcon(els.previewBtn, 'pause');
+                    els.playbackPointer.style.display = 'block';
+                });
+                a.addEventListener('loadedmetadata', () => {
+                    if (a !== activeAudio) return;
+                    els.totalDisplay.textContent = formatTime(videoDuration || a.duration);
+                });
+                // Playhead + in-range looping driven by the audio clock.
+                a.addEventListener('timeupdate', () => {
+                    if (a !== activeAudio) return;
+                    const cur = a.currentTime;
+                    if (!videoDuration) return;
+                    const end = rangeEnd();
+                    if (cur >= end - 0.04) { try { a.currentTime = rangeStart(); } catch (e) { } return; }
+                    const pct = Math.min(cur, videoDuration) / videoDuration * 100;
+                    els.playbackPointer.style.left = pct + '%';
+                    els.currentTimeDisplay.textContent = formatTime(cur);
+                });
+                a.addEventListener('pause', () => {
+                    if (a !== activeAudio) return;   // idle pausing after a fade must not flip the icon
+                    els.previewBtn.classList.remove('playing');
+                    setIcon(els.previewBtn, 'play');
+                });
+                // Full file loops within range, so 'ended' only fires if range = whole file.
+                a.addEventListener('ended', () => {
+                    if (a !== activeAudio) return;
+                    try { a.currentTime = rangeStart(); a.play(); } catch (e) { stopPlayback(); }
+                });
+            }
+            bindAudioEvents(els.previewAudio);
+            bindAudioEvents(idleAudio);
+
             function rangeStart() { return parseFloat(els.startSlider.value) || 0; }
             function rangeEnd() { return parseFloat(els.endSlider.value) || videoDuration; }
 
             // Effect set sent to /stream (NO range/silence — those are export-only).
             function effectParams() {
+                const eq = els.eqToggle && els.eqToggle.checked ? els.eqPresetSelect.value : '';
+                const mbc = els.mbcToggle && els.mbcToggle.checked ? els.mbcPresetSelect.value : '';
+                const enh = els.enhanceModeSelect.value;
+                const norm = els.normalizeToggle.checked;
+                // No EQ/compression/enhance/normalize == acoustically identical to
+                // "Original". Collapse it so untoggling Original (before adding any
+                // FX) doesn't spawn a redundant 'Dry (no FX)' chip or re-encode.
+                const anyFx = !!eq || !!mbc || !!enh || norm;
                 return {
-                    eq_preset: els.eqToggle && els.eqToggle.checked ? els.eqPresetSelect.value : '',
-                    mbc_preset: els.mbcToggle && els.mbcToggle.checked ? els.mbcPresetSelect.value : '',
-                    enhance_mode: els.enhanceModeSelect.value,
+                    eq_preset: eq,
+                    mbc_preset: mbc,
+                    enhance_mode: enh,
                     enhance_intensity: els.enhanceIntensitySelect.value,
-                    normalize: els.normalizeToggle.checked,
+                    normalize: norm,
                     normalize_i: els.normalizeISelect.value,
-                    original: els.originalToggle.checked
+                    original: els.originalToggle.checked || !anyFx
                 };
             }
 
@@ -2314,85 +2497,68 @@
             }
 
             // Load (if needed) and play from `seekTo` (defaults to range start).
+            // Switching to a new combo loads it into the idle element and
+            // crossfades, so there's no silent gap between A/B chips.
             function playPreview(url, seekTo) {
                 const startAt = (seekTo != null) ? seekTo : rangeStart();
-                const needLoad = (currentSrc !== url);
+
+                // Same combo already on the active element -> just (re)play it.
+                if (url === currentSrc && activeAudio.src) {
+                    try { if (Math.abs(activeAudio.currentTime - startAt) > 0.3) activeAudio.currentTime = startAt; } catch (e) { }
+                    const pr = activeAudio.play();
+                    if (pr) pr.catch(e => { if (e.name !== 'AbortError') { showError('Playback failed: ' + e.message); stopPlayback(); } });
+                    return;
+                }
+
+                const oldActive = activeAudio;
+                const wasPlaying = !oldActive.paused && !oldActive.ended;
+                const target = idleAudio;   // load the new combo into the spare element
+                const myToken = ++loadToken;
+
+                isStreaming = true;
+                if (!wasPlaying) { setLoading(els.previewBtn, true); els.previewBtn.dataset.loading = 'true'; }
+                target.src = url;
+                target.load();
 
                 const begin = () => {
-                    try { if (Math.abs(els.previewAudio.currentTime - startAt) > 0.3) els.previewAudio.currentTime = startAt; } catch (e) { }
-                    const pr = els.previewAudio.play();
-                    if (pr) pr.catch(e => { if (e.name !== 'AbortError') { showError('Playback failed: ' + e.message); stopPlayback(); } });
-                };
-
-                if (needLoad) {
+                    if (myToken !== loadToken) return;   // superseded by a newer switch
+                    // Align to the OLD element's LIVE position (it kept playing
+                    // while the new one loaded) plus a small lead, so the two
+                    // overlap in phase instead of flamming/echoing.
+                    const anchor = wasPlaying ? (oldActive.currentTime + SYNC_LEAD) : startAt;
+                    try { target.currentTime = anchor; } catch (e) { }
+                    try { target.volume = wasPlaying ? 0 : 1; } catch (e) { }
+                    // Promote the new element to active so UI events follow it.
+                    activeAudio = target;
+                    idleAudio = oldActive;
                     currentSrc = url;
-                    isStreaming = true;
-                    setLoading(els.previewBtn, true);
-                    els.previewBtn.dataset.loading = 'true';
-                    els.previewAudio.src = url;
-                    els.previewAudio.load();
-                    els.previewAudio.addEventListener('canplay', begin, { once: true });
-                } else {
-                    begin();
-                }
+                    const pr = target.play();
+                    if (pr) pr.catch(e => { if (e.name !== 'AbortError') { showError('Playback failed: ' + e.message); stopPlayback(); } });
+                    if (wasPlaying) {
+                        crossfade(target, oldActive);   // new in, old out (old pauses at the end)
+                    } else {
+                        try { oldActive.pause(); oldActive.volume = 1; } catch (e) { }
+                    }
+                };
+                target.addEventListener('canplay', begin, { once: true });
             }
 
             els.previewBtn.addEventListener('click', () => {
                 if (els.previewBtn.disabled) return;
-                if (!els.previewAudio.paused) { els.previewAudio.pause(); return; }
+                if (!activeAudio.paused) { activeAudio.pause(); return; }
                 const p = effectParams();
                 const url = previewUrlFrom(p);
-                const resume = (currentSrc === url && els.previewAudio.currentTime > 0);
+                const resume = (currentSrc === url && activeAudio.currentTime > 0);
                 recordSnapshot(p);   // A/B: remember this combo (sets it active)
                 renderSnapshots();
                 // Resume from current position if same render; else start at range.
-                playPreview(url, resume ? els.previewAudio.currentTime : rangeStart());
-            });
-
-            els.previewAudio.addEventListener('error', () => {
-                if (!els.previewAudio.src || els.previewAudio.src === window.location.href) return;
-                showError("Preview error: " + (els.previewAudio.error ? els.previewAudio.error.message : "source failure"));
-                isStreaming = false;
-                stopPlayback();
-            });
-
-            els.previewAudio.addEventListener('playing', () => {
-                isStreaming = false;
-                setLoading(els.previewBtn, false);
-                els.previewBtn.classList.add('playing');
-                els.previewBtn.dataset.loading = "";
-                setIcon(els.previewBtn, 'pause');
-                els.playbackPointer.style.display = 'block';
-            });
-
-            els.previewAudio.addEventListener('loadedmetadata', () => {
-                els.totalDisplay.textContent = formatTime(videoDuration || els.previewAudio.duration);
-            });
-
-            // Playhead + in-range looping driven by the audio clock (accurate, no interval).
-            els.previewAudio.addEventListener('timeupdate', () => {
-                const cur = els.previewAudio.currentTime;
-                if (!videoDuration) return;
-                const end = rangeEnd();
-                if (cur >= end - 0.04) { try { els.previewAudio.currentTime = rangeStart(); } catch (e) { } return; }
-                const pct = Math.min(cur, videoDuration) / videoDuration * 100;
-                els.playbackPointer.style.left = pct + '%';
-                els.currentTimeDisplay.textContent = formatTime(cur);
-            });
-
-            els.previewAudio.addEventListener('pause', () => {
-                els.previewBtn.classList.remove('playing');
-                setIcon(els.previewBtn, 'play');
-            });
-
-            // Full file loops within range, so 'ended' only fires if range = whole file.
-            els.previewAudio.addEventListener('ended', () => {
-                try { els.previewAudio.currentTime = rangeStart(); els.previewAudio.play(); } catch (e) { stopPlayback(); }
+                playPreview(url, resume ? activeAudio.currentTime : rangeStart());
             });
 
             function stopPlayback() {
                 isStreaming = false;
-                els.previewAudio.pause();
+                if (fadeRAF) { cancelAnimationFrame(fadeRAF); fadeRAF = null; }
+                [activeAudio, idleAudio].forEach(a => { try { a.pause(); a.volume = 1; } catch (e) { } });
                 els.previewBtn.classList.remove('playing');
                 els.previewBtn.dataset.loading = "";
                 setLoading(els.previewBtn, false);
@@ -2444,23 +2610,16 @@
                 snapshots.forEach(s => {
                     const chip = document.createElement('div');
                     chip.className = 'ab-chip' + (s.id === activeSnapshotId ? ' active' : '');
+                    chip.title = 'Load into controls & play';
                     chip.innerHTML = `
                         <span class="ab-play"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
                         <span class="ab-label">${s.label}</span>
-                        <button class="ab-act ab-load" title="Load into controls"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg></button>
                         <button class="ab-act ab-del" title="Remove"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`;
-                    chip.addEventListener('click', (e) => { if (e.target.closest('.ab-act')) return; playSnapshot(s.id); });
-                    chip.querySelector('.ab-load').addEventListener('click', (e) => { e.stopPropagation(); loadSnapshot(s.id); });
+                    // Clicking the chip now loads the combo into the controls AND plays it.
+                    chip.addEventListener('click', (e) => { if (e.target.closest('.ab-act')) return; loadSnapshot(s.id); });
                     chip.querySelector('.ab-del').addEventListener('click', (e) => { e.stopPropagation(); removeSnapshot(s.id); });
                     list.appendChild(chip);
                 });
-            }
-            function playSnapshot(id) {
-                const s = snapshots.find(x => x.id === id);
-                if (!s) return;
-                activeSnapshotId = id;
-                renderSnapshots();
-                playPreview(previewUrlFrom(s.params), els.previewAudio.paused ? rangeStart() : els.previewAudio.currentTime);
             }
             function removeSnapshot(id) {
                 snapshots = snapshots.filter(x => x.id !== id);
@@ -2482,10 +2641,12 @@
             function loadSnapshot(id) {
                 const s = snapshots.find(x => x.id === id);
                 if (!s) return;
-                applyParamsToControls(s.params);
+                applyParamsToControls(s.params);   // reflect combo in the controls
                 activeSnapshotId = id;
                 renderSnapshots();
-                if (!els.previewAudio.paused) playPreview(previewUrlFrom(s.params), els.previewAudio.currentTime);
+                // Play immediately: resume in place if already playing, else from range start.
+                const resume = !activeAudio.paused;
+                playPreview(previewUrlFrom(s.params), resume ? activeAudio.currentTime : rangeStart());
             }
             els.abClear.addEventListener('click', () => { snapshots = []; activeSnapshotId = null; renderSnapshots(); });
 
@@ -2664,6 +2825,216 @@
                 toast.classList.add('show');
                 setTimeout(() => toast.classList.remove('show'), 6000);
             }
+
+            // ===================== Library (save-dir mode) =====================
+            (function () {
+                const $ = id => document.getElementById(id);
+                const modal = $('libraryModal'), editModal = $('libEditModal');
+                let libItems = [];
+                let editing = null; // { id, hasOriginal }
+
+                function fmtDur(s) {
+                    if (!s && s !== 0) return '';
+                    s = Math.round(s); const m = Math.floor(s / 60), r = s % 60;
+                    return `${m}:${String(r).padStart(2, '0')}`;
+                }
+
+                async function loadLibrary() {
+                    try {
+                        const res = await fetch('/library');
+                        if (!res.ok) return;
+                        const data = await res.json();
+                        libItems = data.items || [];
+                        renderLibrary();
+                    } catch (e) { showError('Failed to load library: ' + e.message); }
+                }
+
+                function renderLibrary() {
+                    const q = ($('libSearch').value || '').toLowerCase();
+                    const list = $('libList'); list.innerHTML = '';
+                    const items = libItems.filter(it => {
+                        const hay = [it.title, (it.artists || []).join(' '), (it.genres || []).join(' '), it.album]
+                            .join(' ').toLowerCase();
+                        return hay.includes(q);
+                    });
+                    $('libEmpty').style.display = items.length ? 'none' : 'block';
+                    items.forEach(it => {
+                        const row = document.createElement('div');
+                        row.style.cssText = 'display:flex; align-items:center; gap:0.6rem; padding:0.55rem 0.7rem; border:1px solid var(--card-border); border-radius:10px; background:rgba(255,255,255,0.02);';
+                        const meta = document.createElement('div');
+                        meta.style.cssText = 'flex:1; min-width:0;';
+                        const sub = [(it.artists || []).join(', '), (it.genres || []).join(', '), fmtDur(it.duration)]
+                            .filter(Boolean).join('  ·  ');
+                        meta.innerHTML = `<div style="font-size:0.85rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${it.title || it.filename || it.youtube_id}</div>
+                            <div style="font-size:0.72rem; opacity:0.6; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${sub}</div>`;
+                        const btns = document.createElement('div');
+                        btns.style.cssText = 'display:flex; gap:0.3rem; flex-shrink:0;';
+                        const mk = (label, fn) => {
+                            const b = document.createElement('button');
+                            b.type = 'button'; b.textContent = label;
+                            b.style.cssText = 'width:auto; padding:0.3rem 0.6rem; font-size:0.72rem; margin:0; background:rgba(255,255,255,0.05); border:1px solid var(--card-border);';
+                            b.onclick = fn; return b;
+                        };
+                        btns.appendChild(mk('Edit', () => openEdit(it.id)));
+                        const del = mk('Delete', () => deleteItem(it.id, it.title || it.filename));
+                        del.style.color = 'var(--primary)';
+                        btns.appendChild(del);
+                        row.appendChild(meta); row.appendChild(btns);
+                        list.appendChild(row);
+                    });
+                }
+
+                function cloneOptions(srcId, withNone) {
+                    const src = document.getElementById(srcId);
+                    let html = src ? src.innerHTML : '';
+                    if (withNone && !/value=("")|value=''/.test(html)) html = '<option value="">None</option>' + html;
+                    return html;
+                }
+
+                function buildFxControls(eff) {
+                    eff = eff || {};
+                    const sel = (id, opts, val) =>
+                        `<label style="font-size:0.7rem; opacity:0.7;">${opts.label}</label>
+                         <select id="${id}" class="styled-select-mini" style="width:100%;">${opts.html}</select>`;
+                    $('libFxControls').innerHTML =
+                        sel('libFxEq', { label: 'EQ preset', html: cloneOptions('eqPresetSelect', true) }) +
+                        sel('libFxMbc', { label: 'Compression', html: cloneOptions('mbcPresetSelect', true) }) +
+                        sel('libFxEnhance', { label: 'Enhance', html: cloneOptions('enhanceModeSelect', true) }) +
+                        sel('libFxIntensity', { label: 'Intensity', html: cloneOptions('enhanceIntensitySelect', false) }) +
+                        sel('libFxNormI', { label: 'Loudness (LUFS)', html: cloneOptions('normalizeISelect', false) }) +
+                        `<div style="display:flex; gap:1rem; margin-top:0.3rem; font-size:0.8rem;">
+                            <label style="display:flex; gap:0.3rem; align-items:center;"><input type="checkbox" id="libFxNorm"> Normalize</label>
+                            <label style="display:flex; gap:0.3rem; align-items:center;"><input type="checkbox" id="libFxTrim"> Trim silence</label>
+                            <label style="display:flex; gap:0.3rem; align-items:center;"><input type="checkbox" id="libFxOriginal"> Original</label>
+                         </div>`;
+                    if ($('libFxEq')) $('libFxEq').value = eff.eq_preset || '';
+                    if ($('libFxMbc')) $('libFxMbc').value = eff.mbc_preset || '';
+                    if ($('libFxEnhance')) $('libFxEnhance').value = eff.enhance_mode || '';
+                    if ($('libFxIntensity')) $('libFxIntensity').value = eff.enhance_intensity || '1.5';
+                    if ($('libFxNormI')) $('libFxNormI').value = eff.normalize_i || '-16';
+                    $('libFxNorm').checked = eff.normalize !== false;
+                    $('libFxTrim').checked = !!eff.trim_silence;
+                    $('libFxOriginal').checked = !!eff.original;
+                }
+
+                async function openEdit(id) {
+                    try {
+                        const res = await fetch('/library/' + id);
+                        if (!res.ok) { showError('Track not found'); return; }
+                        const d = await res.json();
+                        editing = { id, hasOriginal: true };
+                        $('libEditTitle').textContent = d.title || d.filename || 'Edit';
+                        $('libTitle').value = d.title || '';
+                        $('libArtists').value = (d.artists || []).join(', ');
+                        $('libGenres').value = (d.genres || []).join(', ');
+                        $('libAlbum').value = d.album || '';
+                        $('libYear').value = d.year || '';
+                        $('libComposer').value = (d.custom_fields && (d.custom_fields.Composer || d.custom_fields.composer)) || '';
+                        buildFxControls(d.effects);
+                        // original_rel lives in the sidecar; the reprocess endpoint
+                        // 409s if missing, so we just surface the error on click.
+                        showMetaPane();
+                        editModal.style.display = 'block';
+                    } catch (e) { showError(e.message); }
+                }
+
+                function showMetaPane() {
+                    $('libPaneMeta').style.display = 'flex';
+                    $('libPaneFx').style.display = 'none';
+                    $('libTabMeta').style.background = 'var(--primary)';
+                    $('libTabFx').style.background = 'rgba(255,255,255,0.05)';
+                }
+                function showFxPane() {
+                    $('libPaneMeta').style.display = 'none';
+                    $('libPaneFx').style.display = 'flex';
+                    $('libTabFx').style.background = 'var(--primary)';
+                    $('libTabMeta').style.background = 'rgba(255,255,255,0.05)';
+                }
+
+                function splitCsv(v) { return (v || '').split(',').map(s => s.trim()).filter(Boolean); }
+
+                async function saveMeta() {
+                    if (!editing) return;
+                    const composer = $('libComposer').value.trim();
+                    const custom_tags = composer ? [{ key: 'Composer', value: composer }] : [];
+                    const body = {
+                        title: $('libTitle').value.trim(),
+                        artists: splitCsv($('libArtists').value),
+                        genres: splitCsv($('libGenres').value),
+                        album: $('libAlbum').value.trim(),
+                        year: $('libYear').value.trim(),
+                        custom_tags,
+                        delimiter: '|',
+                    };
+                    try {
+                        const res = await fetch('/library/' + editing.id, {
+                            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body),
+                        });
+                        if (!res.ok) { showError('Save failed: ' + (await res.text())); return; }
+                        editModal.style.display = 'none';
+                        loadLibrary();
+                    } catch (e) { showError(e.message); }
+                }
+
+                async function reprocess() {
+                    if (!editing) return;
+                    const body = {
+                        eq_preset: $('libFxEq').value || null,
+                        mbc_preset: $('libFxMbc').value || null,
+                        enhance_mode: $('libFxEnhance').value || null,
+                        enhance_intensity: parseFloat($('libFxIntensity').value) || 1.5,
+                        normalize_i: parseFloat($('libFxNormI').value) || -16,
+                        normalize: $('libFxNorm').checked,
+                        trim_silence: $('libFxTrim').checked,
+                        original: $('libFxOriginal').checked,
+                    };
+                    const btn = $('libReprocess');
+                    btn.disabled = true; btn.textContent = 'Rebuilding…';
+                    try {
+                        const res = await fetch('/library/' + editing.id + '/reprocess', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body),
+                        });
+                        if (!res.ok) { showError('Reprocess failed: ' + (await res.text())); return; }
+                        editModal.style.display = 'none';
+                        loadLibrary();
+                    } catch (e) { showError(e.message); }
+                    finally { btn.disabled = false; btn.textContent = 'Rebuild file with these effects'; }
+                }
+
+                async function deleteItem(id, name) {
+                    if (!confirm(`Delete "${name}"? The MP3 and its sidecar are removed (the archived original is kept).`)) return;
+                    try {
+                        const res = await fetch('/library/' + id, { method: 'DELETE' });
+                        if (!res.ok) { showError('Delete failed'); return; }
+                        loadLibrary();
+                    } catch (e) { showError(e.message); }
+                }
+
+                // Wiring
+                $('libraryBtn').addEventListener('click', () => { modal.style.display = 'block'; loadLibrary(); });
+                $('libCloseBtn').addEventListener('click', () => modal.style.display = 'none');
+                $('libRefreshBtn').addEventListener('click', async () => {
+                    try { await fetch('/library/rebuild', { method: 'POST' }); } catch (e) {}
+                    loadLibrary();
+                });
+                $('libSearch').addEventListener('input', renderLibrary);
+                $('libEditCloseBtn').addEventListener('click', () => editModal.style.display = 'none');
+                $('libTabMeta').addEventListener('click', showMetaPane);
+                $('libTabFx').addEventListener('click', showFxPane);
+                $('libSaveMeta').addEventListener('click', saveMeta);
+                $('libReprocess').addEventListener('click', reprocess);
+                modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
+                editModal.addEventListener('click', e => { if (e.target === editModal) editModal.style.display = 'none'; });
+
+                // Reveal the Library button only in server-save mode.
+                fetch('/config').then(r => r.json()).then(cfg => {
+                    if (cfg && cfg.browser_download_mode === false) {
+                        $('libraryBtn').style.display = 'flex';
+                    }
+                }).catch(() => {});
+            })();
         </script>
 </body>
 

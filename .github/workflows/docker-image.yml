@@ -43,3 +43,12 @@ jobs:
           tags: |
             ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
             ${{ env.IMAGE_NAME }}:latest
+
+      - name: Sync README to Docker Hub overview
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+          repository: ${{ env.IMAGE_NAME }}
+          readme-filepath: ./README.md
+          short-description: "Pull, enhance, tag, and save high-quality audio from YouTube"
