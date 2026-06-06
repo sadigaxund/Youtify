@@ -1,14 +1,23 @@
 
-<img width="1590" height="878" alt="image" src="https://github.com/user-attachments/assets/c454b82a-764f-4a34-bc12-95b2d42a25de" />
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/c454b82a-764f-4a34-bc12-95b2d42a25de" alt="Youtify banner" width="100%" />
+</p>
+
+<h1 align="center">Youtify</h1>
+
+<p align="center">
+  <strong>Pull high-quality audio from YouTube, preview effects live, tag it, and save it — to your device or straight into a server media library.</strong>
+</p>
+
+<p align="center">
+  <a href="https://hub.docker.com/r/sakhund/youtify"><img src="https://img.shields.io/docker/pulls/sakhund/youtify?style=flat-square" /></a>
+  <a href="https://hub.docker.com/r/sakhund/youtify"><img src="https://img.shields.io/docker/v/sakhund/youtify?sort=semver&style=flat-square" /></a>
+</p>
 
 
-
-# Youtify
-
-A modern, web-based tool for pulling high-quality audio from YouTube — preview effects live in the browser, tag it, and save it either to your device or straight into a server media library.
-
-
-<img width="1218" height="1399" alt="image" src="https://github.com/user-attachments/assets/b8a1806b-53cc-4e0c-9c82-b9de0ce380be" />
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/b8a1806b-53cc-4e0c-9c82-b9de0ce380be" alt="Youtify UI" width="45%" />
+</p>
 
 
 ## Features
@@ -32,12 +41,19 @@ A modern, web-based tool for pulling high-quality audio from YouTube — preview
 
 ### Metadata
 - Auto-fetches cover art, title, artist, and year from the video.
-- Multi-artist / multi-genre tagging with autocomplete that **remembers what you've typed** (stored locally in the browser).
-- Custom ID3 tags, cover-art upload (auto-resized to keep files small), and a configurable delimiter for multiple artists/genres (e.g. `,`, `|`, `;`).
+- Multi-artist / multi-genre tagging with autocomplete that **remembers what you've typed** — locally in the browser, and (in Server Save mode) from everything already in your library.
+- Custom ID3 tags, cover-art upload, and a configurable delimiter for multiple artists/genres (e.g. `,`, `|`, `;`).
+- Cover art is **standardized server-side** (JPEG, aspect kept, capped ~1000px) for consistent display in players like Jellyfin.
+
+### Library (Server Save mode)
+- Browse everything you've saved, **edit metadata** (re-tags the file in place — no re-download), **reprocess effects** (rebuilds from an archived original), or delete.
+- Each save also writes an **archive** under `<save-dir>/.youtify/`: a copy of the source audio plus a JSON sidecar. This lets you re-render without re-downloading and rebuild the index if the database is ever lost.
+- A small **SQLite index** (`metadata.db`) powers the library and tag suggestions; it lives in the cache directory and is rebuilt from the sidecars on startup.
 
 ### Deployment
 - **Browser Download** (default): process and download straight to your device.
 - **Server Save**: mount a volume and write files directly to your server library (e.g. Jellyfin / Nextcloud).
+- **Split storage**: keep the media library on one disk (`--save-dir`, e.g. HDD) and the working cache + database on another (`--cache-dir`, e.g. SSD).
 - **Docker** support, running as a non-root user with PUID/PGID mapping for correct file ownership.
 
 ## How it works
@@ -46,74 +62,87 @@ A modern, web-based tool for pulling high-quality audio from YouTube — preview
 
 ## Installation
 
-### Option 1: Run with Python
+### Option 1: Run directly with Python
 
-1. **Install prerequisites** — Python 3.11+ and FFmpeg:
-   ```bash
-   # Linux (Ubuntu/Debian)
-   sudo apt install ffmpeg python3-pip
-   # Linux (Fedora)
-   sudo dnf install ffmpeg python3-pip
-   # macOS
-   brew install ffmpeg
-   ```
+**Prerequisites:** Python 3.11+, FFmpeg, pip
 
-2. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Run the app**
-   ```bash
-   python main.py
-   ```
-
-   **Options:**
-   - `--save-dir "/path/to/downloads"` — save files to a directory on the server.
-   - `SAVE_DIRECTORY="/path"` — same thing via environment variable.
-
-   *Example:*
-   ```bash
-   python main.py --save-dir ~/Music/Youtify
-   ```
-   *If no directory is set, the app runs in **Browser Download Mode**.*
-
-   The server starts at `http://localhost:8000`.
-
-### Option 2: Build & run with Docker
-
-Build the image:
 ```bash
-docker build -t youtify .
+# Install FFmpeg
+# Ubuntu/Debian:  sudo apt install ffmpeg python3-pip
+# Fedora:          sudo dnf install ffmpeg python3-pip
+# macOS:           brew install ffmpeg
+
+# Clone & install
+git clone https://github.com/<your-repo>/youtify.git
+cd youtify
+pip install -r requirements.txt
+
+# Run (browser download mode)
+python main.py
+
+# Or run (server save mode)
+python main.py --save-dir ~/Music/Youtify
+
+# Split storage: library on HDD, cache + database on SSD
+python main.py --save-dir /mnt/hdd/Music --cache-dir ~/.cache/youtify
 ```
 
-Run (Server Save mode):
+Server starts at `http://localhost:8000`.
+
+**Configuration** (CLI flag overrides environment variable):
+
+| Flag | Env var | Default | Purpose |
+|------|---------|---------|---------|
+| `--save-dir` | `SAVE_DIRECTORY` | _(unset → browser download)_ | Media library + `.youtify/` archive |
+| `--cache-dir` | `CACHE_DIRECTORY` | `~/.cache/youtify` | Working cache (previews/downloads) + `metadata.db` |
+
+`LOG_LEVEL` (default `INFO`) controls log verbosity.
+
+### Option 2: Pull & run from Docker Hub (recommended)
+
 ```bash
-# Replace /path/to/music with your host's music directory.
-# PUID/PGID make saved files owned by your user, not root.
-docker run -d \
-  --name youtify \
-  -p 8000:8000 \
+docker pull sakhund/youtify:latest
+
+# Browser download mode
+docker run -d --name youtify -p 8000:8000 sakhund/youtify:latest
+
+# Server save mode (set PUID/PGID to your user ID for correct file ownership)
+docker run -d --name youtify -p 8000:8000 \
   -v /path/to/music:/music \
   -e SAVE_DIRECTORY=/music \
   -e PUID=$(id -u) \
   -e PGID=$(id -g) \
-  youtify
+  sakhund/youtify:latest
+
+# Optional: persist the cache + database on a separate (e.g. SSD) volume.
+# It's disposable — the database rebuilds from the library's sidecars — but
+# mounting it avoids re-downloading sources after a container recreate.
+docker run -d --name youtify -p 8000:8000 \
+  -v /path/to/music:/music \
+  -v /path/to/cache:/cache \
+  -e SAVE_DIRECTORY=/music \
+  -e PUID=$(id -u) \
+  -e PGID=$(id -g) \
+  sakhund/youtify:latest
 ```
 
-Run (Browser Download mode):
-```bash
-docker run -d \
-  --name youtify \
-  -p 8000:8000 \
-  youtify
-```
+The container defaults `CACHE_DIRECTORY=/cache`; the `.youtify/` archive sits inside `/music`, so the media volume already protects it.
 
 Access the UI at `http://localhost:8000`.
+
+### Option 3: Build image from source
+
+```bash
+git clone https://github.com/<your-repo>/youtify.git
+cd youtify
+docker build -t sakhund/youtify:latest .
+# Then run using Option 2 commands
+```
 
 ## Usage
 
 1. Paste a YouTube URL and hit **Search** — the thumbnail/metadata load and the audio starts caching in the background.
-2. Set a **time range**, pick **effects**, and press **play** to preview. Try a few combos; each is saved to the **A/B** list to compare.
+2. Set a **time range**, pick **effects**, and press **play** to preview. Try a few combos; each is saved to the **A/B** list — click any chip to load it back into the controls and hear it (gap-free crossfade).
 3. Edit **metadata** and cover art.
 4. Hit **Download** — files stream to your browser (or save to the server in Server Save mode).
+5. In Server Save mode, open **Library** to revisit saved tracks: edit metadata in place, reprocess effects, or delete.

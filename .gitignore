@@ -3,6 +3,11 @@
 /backup
 ~/Downloads
 
+# Youtify runtime data (DB is a rebuildable index; archive lives in save-dir)
+/metadata.db
+metadata.db
+.youtify/
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

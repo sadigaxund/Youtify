@@ -20,8 +20,17 @@ if ! getent passwd $PUID > /dev/null 2>&1; then
     useradd -u $PUID -g $PGID -m -s /bin/bash apps
 fi
 
-# Only chown the app directory (never mounted volumes)
+# Only chown the app directory (never mounted media volumes)
 chown -R $PUID:$PGID /app
+
+# Working cache + metadata.db. Unlike the media library this is disposable
+# (the DB rebuilds from the sidecars), so we ensure it's writable by the app
+# user even when mounted as a volume.
+CACHE_DIRECTORY=${CACHE_DIRECTORY:-/cache}
+mkdir -p "$CACHE_DIRECTORY" 2>/dev/null || true
+chown -R $PUID:$PGID "$CACHE_DIRECTORY" 2>/dev/null || \
+    echo "WARNING: could not chown cache dir $CACHE_DIRECTORY (continuing)"
+export CACHE_DIRECTORY
 
 # Validate save directory permissions if configured
 if [ -n "$SAVE_DIRECTORY" ]; then

@@ -10,11 +10,21 @@ ENV PUID=568
 ENV PGID=568
 
 # Optional: Set to a path inside the container to save files server-side
-# If unset, files are streamed directly to the browser
+# If unset, files are streamed directly to the browser.
+# The library archive (originals + metadata sidecars) lives under
+# $SAVE_DIRECTORY/.youtify, so the same volume covers it.
 # ENV SAVE_DIRECTORY=/music
+
+# Working cache + metadata.db (SSD-friendly). Kept separate from the media
+# library so they can live on different disks. The DB is rebuilt from the
+# sidecars on startup, so this volume is optional/disposable.
+ENV CACHE_DIRECTORY=/cache
 
 # Set the working directory in the container
 WORKDIR /app
+
+# Pre-create the cache mount point (entrypoint chowns it to PUID:PGID at runtime)
+RUN mkdir -p /cache
 
 # Install system dependencies
 # ffmpeg for audio, gosu for privilege dropping, gcc/python3-dev for C extensions (audioop-lts)
