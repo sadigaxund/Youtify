@@ -105,6 +105,26 @@ class AudioMetadataDB:
                 )
             ''')
             conn.execute("CREATE INDEX IF NOT EXISTS idx_tags_kind_value ON tags(kind, value)")
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS playlists (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    kind TEXT NOT NULL DEFAULT 'manual',
+                    filters_json TEXT,
+                    sort_json TEXT,
+                    has_cover INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS playlist_tracks (
+                    playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+                    youtube_id TEXT NOT NULL,
+                    position INTEGER,
+                    PRIMARY KEY (playlist_id, youtube_id)
+                )
+            ''')
             conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
     # ------------------------------------------------------------------ writes
@@ -205,11 +225,17 @@ class AudioMetadataDB:
                 "SELECT * FROM audio_files ORDER BY created_at DESC").fetchall()
             artists = self._tags_by_audio(conn, "artist")
             genres = self._tags_by_audio(conn, "genre")
+            # Custom fields per track (for client-side filtering/sorting).
+            custom: Dict[int, Dict[str, str]] = {}
+            for r in conn.execute(
+                    "SELECT audio_file_id AS aid, field_name, field_value FROM metadata_fields").fetchall():
+                custom.setdefault(r["aid"], {})[r["field_name"]] = r["field_value"]
             items = []
             for f in files:
                 d = dict(f)
                 d["artists"] = artists.get(f["id"], [])
                 d["genres"] = genres.get(f["id"], [])
+                d["custom_fields"] = custom.get(f["id"], {})
                 d.pop("effects_json", None)
                 items.append(d)
             return items
@@ -296,4 +322,73 @@ class AudioMetadataDB:
                 count += 1
             except Exception as e:
                 print(f"Warning: failed to index sidecar {path}: {e}")
+        return count
+
+    # -------------------------------------------------------------- playlists
+
+    def upsert_playlist(self, *, id, name, kind="manual", filters=None, sort=None,
+                        has_cover=False, track_ids=None):
+        with self.get_connection() as conn:
+            conn.execute('''
+                INSERT INTO playlists (id, name, kind, filters_json, sort_json, has_cover, updated_at)
+                VALUES (?,?,?,?,?,?, CURRENT_TIMESTAMP)
+                ON CONFLICT(id) DO UPDATE SET
+                    name=excluded.name, kind=excluded.kind, filters_json=excluded.filters_json,
+                    sort_json=excluded.sort_json, has_cover=excluded.has_cover, updated_at=CURRENT_TIMESTAMP
+            ''', (id, name, kind, json.dumps(filters or []), json.dumps(sort or {}), 1 if has_cover else 0))
+            if track_ids is not None:
+                conn.execute("DELETE FROM playlist_tracks WHERE playlist_id=?", (id,))
+                for pos, yid in enumerate(track_ids):
+                    conn.execute("INSERT OR IGNORE INTO playlist_tracks(playlist_id, youtube_id, position) "
+                                 "VALUES(?,?,?)", (id, yid, pos))
+
+    def list_playlists(self) -> List[dict]:
+        with self.get_connection() as conn:
+            rows = conn.execute("SELECT * FROM playlists ORDER BY name COLLATE NOCASE").fetchall()
+            counts = {}
+            for r in conn.execute("SELECT playlist_id, COUNT(*) c FROM playlist_tracks GROUP BY playlist_id"):
+                counts[r["playlist_id"]] = r["c"]
+            out = []
+            for r in rows:
+                d = dict(r)
+                d["count"] = counts.get(r["id"], 0)
+                d["filters"] = json.loads(d.pop("filters_json") or "[]")
+                d["sort"] = json.loads(d.pop("sort_json") or "{}")
+                out.append(d)
+            return out
+
+    def get_playlist(self, pid) -> Optional[dict]:
+        with self.get_connection() as conn:
+            r = conn.execute("SELECT * FROM playlists WHERE id=?", (pid,)).fetchone()
+            if not r:
+                return None
+            d = dict(r)
+            d["filters"] = json.loads(d.pop("filters_json") or "[]")
+            d["sort"] = json.loads(d.pop("sort_json") or "{}")
+            d["track_ids"] = [x["youtube_id"] for x in conn.execute(
+                "SELECT youtube_id FROM playlist_tracks WHERE playlist_id=? ORDER BY position",
+                (pid,)).fetchall()]
+            return d
+
+    def delete_playlist(self, pid) -> Optional[dict]:
+        with self.get_connection() as conn:
+            r = conn.execute("SELECT * FROM playlists WHERE id=?", (pid,)).fetchone()
+            if not r:
+                return None
+            conn.execute("DELETE FROM playlists WHERE id=?", (pid,))
+            return dict(r)
+
+    def rebuild_playlists_from_sidecars(self, pdir) -> int:
+        count = 0
+        for path in glob.glob(os.path.join(pdir, "*.json")):
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    pl = json.load(fh)
+                self.upsert_playlist(
+                    id=pl["id"], name=pl.get("name", "Untitled"), kind=pl.get("kind", "manual"),
+                    filters=pl.get("filters", []), sort=pl.get("sort", {}),
+                    has_cover=pl.get("has_cover", False), track_ids=pl.get("track_ids", []))
+                count += 1
+            except Exception as e:
+                print(f"Warning: failed to index playlist {path}: {e}")
         return count

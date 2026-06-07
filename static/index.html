@@ -34,38 +34,81 @@
             background-color: var(--bg);
             color: var(--text);
             min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
             background-image:
                 radial-gradient(circle at 10% 20%, rgba(255, 0, 80, 0.1) 0%, transparent 40%),
                 radial-gradient(circle at 90% 80%, rgba(0, 163, 255, 0.1) 0%, transparent 40%);
             overflow-x: hidden;
         }
 
-        .container {
-            width: 100%;
-            max-width: 500px;
-            padding: 2rem;
-            transition: max-width 0.55s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-
-        /* After search, widen into the two-column workspace */
-        .container.expanded {
-            max-width: 940px;
-        }
-
-        .card {
-            background: var(--card-bg);
+        /* ---- App shell: sticky top bar + full-width, capped content ---- */
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            background: rgba(12, 12, 20, 0.55);
             backdrop-filter: blur(20px);
-            border: 1px solid var(--card-border);
-            border-radius: 24px;
-            padding: 2.5rem;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-            animation: fadeIn 0.6s ease-out;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        .topbar-inner {
+            max-width: 1200px;
+            margin: 0 auto;
             display: flex;
-            flex-direction: column;
-            gap: 1.5rem;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.85rem 1.5rem;
+        }
+
+        .brand {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 800;
+            font-size: 1.4rem;
+            cursor: pointer;
+            background: linear-gradient(135deg, #fff 0%, #ff0050 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .topbar nav {
+            display: flex;
+            gap: 0.4rem;
+            margin-left: auto;
+        }
+
+        .nav-link {
+            width: auto;
+            margin: 0;
+            padding: 0.45rem 0.9rem;
+            font-size: 0.85rem;
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 10px;
+            color: var(--text-dim);
+        }
+
+        .nav-link:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .nav-link.active {
+            color: #fff;
+            background: rgba(255, 0, 80, 0.12);
+            border-color: var(--primary);
+        }
+
+        .content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1.75rem 1.5rem 3rem;
+            animation: fadeIn 0.4s ease-out;
+        }
+
+        /* Download form stays comfortably readable, not stretched edge-to-edge */
+        #downloadView {
+            max-width: 980px;
+            margin: 0 auto;
         }
 
         @keyframes fadeIn {
@@ -465,10 +508,6 @@
 
         /* Single column on narrow screens — no horizontal cramming on mobile */
         @media (max-width: 720px) {
-            .container.expanded {
-                max-width: 500px;
-            }
-
             .options-panel {
                 grid-template-columns: 1fr;
             }
@@ -720,8 +759,6 @@
             display: flex;
             flex-direction: column;
             gap: 0.4rem;
-            max-height: 190px;
-            overflow-y: auto;
         }
 
         .ab-empty {
@@ -1007,50 +1044,589 @@
             background: rgba(255, 255, 255, 0.1);
         }
 
-        /* PayPal Button Styles */
-        .paypal-donate-btn {
-            display: inline-flex;
+        /* Library: a clean list of rows (thumb + info + actions) */
+        #libList {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .lib-row {
+            display: flex;
+            align-items: center;
+            gap: 0.85rem;
+            padding: 0.5rem 0.7rem;
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.03);
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+
+        .lib-row:hover {
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .lib-row .lib-cover {
+            width: 52px;
+            height: 52px;
+            border-radius: 8px;
+            object-fit: cover;
+            flex-shrink: 0;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+        }
+
+        .lib-row .lib-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .lib-row .lib-ttl {
+            font-size: 0.88rem;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .lib-row .lib-sub {
+            font-size: 0.74rem;
+            opacity: 0.6;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .lib-row .lib-actions {
+            display: flex;
+            gap: 0.4rem;
+            flex-shrink: 0;
+        }
+
+        .lib-btn {
+            width: 34px;
+            height: 34px;
+            padding: 0;
+            margin: 0;
+            display: flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
-            background: #ffc439;
-            color: #003087;
-            padding: 10px 24px;
-            border-radius: 100px;
-            font-weight: 700;
-            font-size: 14px;
-            text-decoration: none;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 12px rgba(255, 196, 57, 0.2);
-            font-family: 'Inter', sans-serif;
-            border: none;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--card-border);
+            color: #fff;
+        }
+
+        .lib-btn.lib-play.playing {
+            background: rgba(255, 0, 80, 0.85);
+            border-color: transparent;
+        }
+
+        .lib-btn.lib-del:hover {
+            background: rgba(255, 0, 80, 0.18);
+            border-color: rgba(255, 0, 80, 0.4);
+            color: var(--primary);
+        }
+
+        /* Library 2-pane: track list + now-playing */
+        .lib-layout {
+            display: flex;
+            gap: 1.25rem;
+            align-items: flex-start;
+        }
+
+        .lib-main {
+            flex: 1;
+            min-width: 0;
+        }
+
+        /* Playlist sidebar */
+        .lib-sidebar {
+            width: 210px;
+            flex-shrink: 0;
+        }
+
+        .pl-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+            margin-bottom: 0.6rem;
+        }
+
+        .pl-entry {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            padding: 0.4rem 0.5rem;
+            border-radius: 8px;
             cursor: pointer;
         }
 
-        .paypal-donate-btn:hover {
-            background: #f2ba36;
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(255, 196, 57, 0.3);
+        .pl-entry:hover { background: rgba(255, 255, 255, 0.05); }
+        .pl-entry.active { background: rgba(255, 0, 80, 0.12); }
+
+        .pl-entry .pl-thumb {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            object-fit: cover;
+            flex-shrink: 0;
+            background: rgba(255, 255, 255, 0.08);
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
-        .paypal-donate-btn:active {
-            transform: translateY(0);
+        .pl-entry .pl-name {
+            flex: 1;
+            min-width: 0;
+            font-size: 0.82rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
-        .paypal-donate-btn svg {
-            width: 18px;
-            height: 18px;
+        .pl-entry .pl-count { font-size: 0.7rem; opacity: 0.5; }
+
+        .pl-entry .pl-del {
+            width: auto;
+            margin: 0;
+            padding: 0 0.2rem;
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .pl-entry:hover .pl-del { opacity: 0.7; }
+
+        .pl-new {
+            width: 100%;
+            margin: 0;
+            font-size: 0.8rem;
+            padding: 0.45rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+        }
+
+        .pl-create {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+            padding: 0.6rem;
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .pl-create input[type=text] {
+            padding: 0.4rem 0.5rem;
+            font-size: 0.8rem;
+            border-radius: 8px;
+        }
+
+        .pl-kind { display: flex; gap: 0.3rem; }
+
+        .pl-kind-btn {
+            flex: 1;
+            margin: 0;
+            font-size: 0.75rem;
+            padding: 0.35rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+            border-radius: 7px;
+        }
+
+        .pl-kind-btn.active { background: var(--primary); border-color: transparent; }
+
+        .pl-dyn-row { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+
+        .pl-dyn-row select,
+        .pl-dyn-row input {
+            font-size: 0.74rem;
+            padding: 0.3rem;
+            border-radius: 6px;
+            min-width: 0;
+            box-sizing: border-box;
+        }
+
+        .pl-dyn-row select { flex: 1 1 100%; }   /* field picker on its own line */
+        .pl-dyn-row input { flex: 1; }            /* value + Add share the next line */
+        .pl-dyn-row .lib-ctl-btn { flex-shrink: 0; height: auto; padding: 0.3rem 0.55rem; }
+
+        .pl-sub-btn {
+            width: 100%;
+            margin: 0;
+            background: transparent;
+            border: 1px solid var(--card-border);
+            font-size: 0.75rem;
+            padding: 0.35rem;
+            border-radius: 7px;
+        }
+
+        .pl-create-actions { display: flex; gap: 0.4rem; }
+        .pl-create-actions button { font-size: 0.8rem; padding: 0.4rem; }
+
+        /* Add-to-playlist popup menu */
+        .pl-menu {
+            position: absolute;
+            z-index: 200;
+            min-width: 160px;
+            max-height: 240px;
+            overflow-y: auto;
+            background: rgba(20, 20, 30, 0.98);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+            padding: 0.3rem;
+        }
+
+        .pl-menu button {
+            display: block;
+            width: 100%;
+            text-align: left;
+            margin: 0;
+            padding: 0.4rem 0.55rem;
+            font-size: 0.78rem;
+            background: none;
+            border: none;
+            border-radius: 6px;
+            color: #fff;
+        }
+
+        .pl-menu button:hover { background: rgba(255, 255, 255, 0.08); }
+
+        @media (max-width: 900px) {
+            .lib-sidebar { width: 100%; }
+        }
+
+        /* YouTube search results (non-URL input on the download view) */
+        .search-results {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            margin-top: 0.75rem;
+        }
+
+        .sr-row {
+            display: flex;
+            align-items: center;
+            gap: 0.7rem;
+            padding: 0.45rem 0.6rem;
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            cursor: pointer;
+        }
+
+        .sr-row:hover { background: rgba(255, 255, 255, 0.07); }
+
+        .sr-row img {
+            width: 64px;
+            height: 40px;
+            object-fit: cover;
+            border-radius: 6px;
+            flex-shrink: 0;
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .sr-row .sr-info { flex: 1; min-width: 0; }
+
+        .sr-row .sr-ttl {
+            font-size: 0.84rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .sr-row .sr-sub {
+            font-size: 0.72rem;
+            opacity: 0.6;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .lib-search {
+            width: 100%;
+            padding: 0.55rem 0.75rem;
+            font-size: 0.9rem;
+            border-radius: 10px;
+            margin-bottom: 0.7rem;
+        }
+
+        .lib-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem 1rem;
+            align-items: center;
+            margin-bottom: 0.7rem;
+        }
+
+        .lib-ctl {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .lib-ctl.filter {
+            flex: 1;
+            min-width: 280px;
+        }
+
+        .lib-ctl.sort {
+            flex-shrink: 0;
+        }
+
+        .lib-ctl-label {
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--text-dim);
+            white-space: nowrap;
+        }
+
+        /* Uniform control sizing across the filter/sort row */
+        .lib-controls select,
+        .lib-controls input,
+        .lib-controls .lib-ctl-btn {
+            height: 36px;
+            padding: 0 0.65rem;
+            font-size: 0.8rem;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+            color: #fff;
+            margin: 0;
+        }
+
+        .lib-ctl.filter #libFilterValue {
+            flex: 1;
+            min-width: 80px;
+        }
+
+        .lib-ctl-btn {
+            width: auto;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .lib-ctl-icon {
+            width: 36px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .lib-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            margin-bottom: 0.6rem;
+        }
+
+        .lib-chips:empty {
+            display: none;
+        }
+
+        .filter-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.25rem 0.55rem;
+            font-size: 0.72rem;
+            border-radius: 999px;
+            background: rgba(255, 0, 80, 0.12);
+            border: 1px solid rgba(255, 0, 80, 0.35);
+            color: #fff;
+        }
+
+        .filter-chip button {
+            width: auto;
+            margin: 0;
+            padding: 0;
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.7);
+            cursor: pointer;
+            font-size: 0.9em;
+            line-height: 1;
+        }
+
+        .lib-row.playing {
+            border-color: var(--primary);
+            background: rgba(255, 0, 80, 0.08);
+        }
+
+        .now-playing {
+            width: 320px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 1.5rem;
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 1.1rem;
+        }
+
+        .np-empty {
+            opacity: 0.5;
+            text-align: center;
+            font-size: 0.85rem;
+            padding: 2rem 0;
+        }
+
+        .np-cover {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            border-radius: 12px;
+            object-fit: cover;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+        }
+
+        .np-title {
+            font-weight: 700;
+            font-size: 1rem;
+            margin-top: 0.8rem;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+
+        .np-artist {
+            font-size: 0.82rem;
+            opacity: 0.65;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+
+        .np-marq {
+            display: inline-block;
+            will-change: transform;
+        }
+
+        .np-title.scroll .np-marq,
+        .np-artist.scroll .np-marq {
+            animation: npMarquee var(--marq-dur, 8s) ease-in-out infinite alternate;
+        }
+
+        @keyframes npMarquee {
+            from { transform: translateX(0); }
+            to { transform: translateX(var(--marq-dist, 0)); }
+        }
+
+        .np-seek {
+            width: 100%;
+            margin-top: 0.9rem;
+            accent-color: var(--primary);
+            cursor: pointer;
+        }
+
+        .np-time {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.7rem;
+            opacity: 0.6;
+            margin-top: 0.2rem;
+        }
+
+        .np-controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 0.8rem;
+        }
+
+        .np-btn {
+            width: 44px;
+            height: 44px;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--card-border);
+            color: #fff;
+        }
+
+        .np-btn.np-play {
+            width: 56px;
+            height: 56px;
+            background: var(--primary);
+            border-color: transparent;
+        }
+
+        @media (max-width: 900px) {
+            .lib-layout {
+                flex-direction: column;
+            }
+
+            .now-playing {
+                width: 100%;
+                position: static;
+                order: -1;
+            }
+        }
+
+        /* Edit view: two-column (cover | fields) so it fills the page width */
+        .edit-grid {
+            display: grid;
+            grid-template-columns: 220px 1fr;
+            gap: 1.25rem 1.5rem;
+            align-items: start;
+        }
+
+        .edit-grid .edit-cover {
+            grid-column: 1;
+        }
+
+        .edit-grid .edit-fields {
+            grid-column: 2;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+        }
+
+        .edit-grid .edit-actions {
+            grid-column: 1 / -1;
+        }
+
+        @media (max-width: 640px) {
+            .edit-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .edit-grid .edit-cover,
+            .edit-grid .edit-fields,
+            .edit-grid .edit-actions {
+                grid-column: 1;
+            }
         }
     </style>
 </head>
 
 <body>
-    <div class="container">
-        <div class="card" autocomplete="off">
-            <h1>Youtify</h1>
-            <p class="subtitle">YouTube to MP3</p>
-
-            <div class="input-group">
+    <header class="topbar">
+        <div class="topbar-inner">
+            <span class="brand" id="brandHome">Youtify</span>
+            <nav>
+                <button id="navDownload" type="button" class="nav-link active">Download</button>
+                <button id="navLibrary" type="button" class="nav-link" style="display:none;">Library</button>
+            </nav>
+        </div>
+    </header>
+    <main class="content">
+            <div id="downloadView">
+            <div class="input-group" id="inputGroup">
                 <input type="text" id="urlInput" placeholder="Paste YouTube URL here...">
                 <i data-lucide="link" class="input-icon"></i>
             </div>
@@ -1060,21 +1636,9 @@
                 <span>Search</span>
             </button>
 
-            <!-- Library (server-save mode only; shown after config check) -->
-            <button id="libraryBtn" style="display:none; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin-top:0.5rem;">
-                <i data-lucide="library"></i>
-                <span>Library</span>
-            </button>
+            <div id="searchResults" class="search-results" style="display:none;"></div>
 
             <div id="preview" class="preview">
-                <div class="preview-card">
-                    <img id="thumb" class="thumbnail" src="" alt="Thumbnail">
-                    <div class="info">
-                        <h3 id="title">Video Title</h3>
-                        <p id="author">Channel Name</p>
-                    </div>
-                </div>
-
                 <div class="media-player">
                     <div class="playback-controls">
                         <button id="previewBtn" class="play-pause-btn">
@@ -1206,11 +1770,11 @@
                          can flip between combos without touching the live controls. -->
                     <div id="abCompare" class="ab-compare">
                         <div class="ab-head">
-                            <span><i data-lucide="layers" style="width:12px;height:12px;"></i> A/B Compare</span>
-                            <button id="abClear" type="button" title="Clear all snapshots">Clear</button>
+                            <span><i data-lucide="layers" style="width:12px;height:12px;"></i> Mixes</span>
+                            <button id="abClear" type="button" title="Clear all mixes">Clear</button>
                         </div>
                         <div id="abList" class="ab-list">
-                            <span class="ab-empty">Press play — each combo you preview is saved here to flip between.</span>
+                            <span class="ab-empty">Press play — each mix you preview is saved here to flip between.</span>
                         </div>
                     </div>
                 </div>
@@ -1223,21 +1787,21 @@
                         </div>
                     </div>
 
-                    <!-- Thumbnail Section -->
-                    <div style="display:flex; gap:1rem; align-items:center;">
-                        <div style="position:relative; flex-shrink:0;">
+                    <!-- Cover Section (image with controls stacked beneath, at image width) -->
+                    <div style="display:flex; flex-direction:column; gap:0.5rem; align-items:center; margin-bottom:0.25rem;">
+                        <div style="position:relative; width:100%; max-width:200px;">
                             <img id="metaThumb" src="" alt="Cover"
-                                style="width:80px; height:80px; border-radius:12px; object-fit:cover; border:1px solid var(--card-border);">
+                                style="width:100%; aspect-ratio:1/1; border-radius:12px; object-fit:cover; border:1px solid var(--card-border); display:block; background:rgba(255,255,255,0.03);">
                             <input type="file" id="thumbUpload" accept="image/*" style="display:none;">
                         </div>
-                        <div style="display:flex; flex-direction:column; gap:0.4rem; flex:1; min-width:0;">
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.4rem; width:100%; max-width:200px;">
                             <button id="uploadThumbBtn" type="button"
-                                style="width:auto; padding:0.4rem 0.8rem; font-size:0.75rem; border-radius:8px; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin:0;">
+                                style="width:100%; padding:0.4rem 0.5rem; font-size:0.72rem; border-radius:8px; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin:0;">
                                 <i data-lucide="upload" style="width:12px; height:12px;"></i>
-                                <span>Upload Cover</span>
+                                <span>Upload</span>
                             </button>
                             <button id="resetThumbBtn" type="button"
-                                style="width:auto; padding:0.4rem 0.8rem; font-size:0.75rem; border-radius:8px; background:transparent; border:1px solid var(--card-border); margin:0; display:none;">
+                                style="width:100%; padding:0.4rem 0.5rem; font-size:0.72rem; border-radius:8px; background:transparent; border:1px solid var(--card-border); margin:0;">
                                 <i data-lucide="rotate-ccw" style="width:12px; height:12px;"></i>
                                 <span>Reset</span>
                             </button>
@@ -1362,7 +1926,165 @@
                 <i data-lucide="check-circle" style="width: 32px; height: 32px; margin: 0 auto 0.5rem;"></i>
                 <p style="font-size:0.9rem">Saved successfully!</p>
             </div>
-        </div>
+            </div> <!-- /downloadView -->
+
+            <!-- ===================== Library view ===================== -->
+            <div id="libraryView" style="display:none;">
+                <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:1rem;">
+                    <button id="libBackBtn" type="button" title="Back"
+                        style="width:auto; padding:0.4rem 0.6rem; margin:0; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); border-radius:10px;">
+                        <i data-lucide="arrow-left" style="width:16px;height:16px;"></i>
+                    </button>
+                    <h2 style="margin:0; font-size:1.15rem; flex:1;">Library</h2>
+                    <button id="libRefreshBtn" type="button"
+                        style="width:auto; padding:0.4rem 0.8rem; font-size:0.78rem; margin:0; background:rgba(255,255,255,0.05); border:1px solid var(--card-border);">Rebuild index</button>
+                </div>
+
+                <div class="lib-layout">
+                    <aside class="lib-sidebar">
+                        <div id="plList" class="pl-list"></div>
+                        <button id="plNewBtn" type="button" class="pl-new">+ New playlist</button>
+                        <div id="plCreate" class="pl-create" style="display:none;">
+                            <input type="text" id="plName" placeholder="Playlist name">
+                            <div class="pl-kind">
+                                <button type="button" id="plKindManual" class="pl-kind-btn active">Manual</button>
+                                <button type="button" id="plKindDynamic" class="pl-kind-btn">Dynamic</button>
+                            </div>
+                            <div id="plDynBuilder" style="display:none;">
+                                <div class="pl-dyn-row">
+                                    <select id="plFilterField"></select>
+                                    <input type="text" id="plFilterValue" placeholder="contains…">
+                                    <button type="button" id="plAddFilter" class="lib-ctl-btn">+</button>
+                                </div>
+                                <div id="plChips" class="lib-chips"></div>
+                            </div>
+                            <input type="file" id="plCoverUpload" accept="image/*" style="display:none;">
+                            <button type="button" id="plCoverBtn" class="pl-sub-btn">Cover image (optional)</button>
+                            <div class="pl-create-actions">
+                                <button type="button" id="plCreateSave">Create</button>
+                                <button type="button" id="plCreateCancel" class="pl-sub-btn">Cancel</button>
+                            </div>
+                        </div>
+                    </aside>
+                    <div class="lib-main">
+                        <input type="text" id="libSearch" class="lib-search" placeholder="Search title, artist, genre…">
+                        <div class="lib-controls">
+                            <div class="lib-ctl filter">
+                                <span class="lib-ctl-label">Filter</span>
+                                <select id="libFilterField"></select>
+                                <input type="text" id="libFilterValue" placeholder="contains…">
+                                <button id="libAddFilter" type="button" class="lib-ctl-btn">+ Add</button>
+                            </div>
+                            <div class="lib-ctl sort">
+                                <span class="lib-ctl-label">Sort</span>
+                                <select id="libSortField">
+                                    <option value="created_at">Date added</option>
+                                    <option value="title">Title</option>
+                                    <option value="artist">Artist</option>
+                                    <option value="album">Album</option>
+                                    <option value="year">Year</option>
+                                    <option value="duration">Duration</option>
+                                </select>
+                                <button id="libSortDir" type="button" class="lib-ctl-btn lib-ctl-icon" title="Sort direction">↓</button>
+                            </div>
+                        </div>
+                        <div id="libChips" class="lib-chips"></div>
+                        <div id="libList"></div>
+                        <p id="libEmpty" style="display:none; opacity:0.6; text-align:center; padding:2rem 0; font-size:0.85rem;">No tracks match.</p>
+                    </div>
+
+                    <aside id="nowPlaying" class="now-playing">
+                        <div id="npEmpty" class="np-empty">Pick a track to play.</div>
+                        <div id="npBody" style="display:none;">
+                            <img id="npCover" class="np-cover" alt="">
+                            <div id="npTitle" class="np-title"></div>
+                            <div id="npArtist" class="np-artist"></div>
+                            <input type="range" id="npSeek" class="np-seek" min="0" max="1000" value="0">
+                            <div class="np-time"><span id="npCur">0:00</span><span id="npDur">0:00</span></div>
+                            <div class="np-controls">
+                                <button id="npPrev" type="button" class="np-btn" title="Previous"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM20 6v12l-9-6z"/></svg></button>
+                                <button id="npPlay" type="button" class="np-btn np-play" title="Play/Pause"></button>
+                                <button id="npNext" type="button" class="np-btn" title="Next"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM4 6l9 6-9 6z"/></svg></button>
+                            </div>
+                        </div>
+                    </aside>
+                </div>
+            </div>
+
+            <!-- ===================== Library edit view ===================== -->
+            <div id="libEditView" style="display:none;">
+                <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:1rem;">
+                    <button id="libEditBackBtn" type="button" title="Back"
+                        style="width:auto; padding:0.4rem 0.6rem; margin:0; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); border-radius:10px;">
+                        <i data-lucide="arrow-left" style="width:16px;height:16px;"></i>
+                    </button>
+                    <h2 id="libEditTitle" style="margin:0; font-size:1.1rem; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Edit</h2>
+                </div>
+
+                <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
+                    <button id="libTabMeta" type="button" style="flex:1; padding:0.45rem; font-size:0.8rem; margin:0;">Metadata</button>
+                    <button id="libTabFx" type="button" style="flex:1; padding:0.45rem; font-size:0.8rem; margin:0; background:rgba(255,255,255,0.05); border:1px solid var(--card-border);">Effects</button>
+                </div>
+
+                <!-- Metadata pane (two-column: cover | fields) -->
+                <div id="libPaneMeta" class="edit-grid">
+                    <div class="edit-cover">
+                        <div style="position:relative; width:100%;">
+                            <img id="libEditThumb" src="" alt="Cover"
+                                style="width:100%; aspect-ratio:1/1; border-radius:12px; object-fit:cover; border:1px solid var(--card-border); display:block; background:rgba(255,255,255,0.03);">
+                            <input type="file" id="libThumbUpload" accept="image/*" style="display:none;">
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.4rem; margin-top:0.5rem;">
+                            <button id="libUploadThumbBtn" type="button"
+                                style="width:100%; padding:0.4rem 0.5rem; font-size:0.72rem; border-radius:8px; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin:0;">
+                                <i data-lucide="upload" style="width:12px;height:12px;"></i><span>Upload</span>
+                            </button>
+                            <button id="libResetThumbBtn" type="button"
+                                style="width:100%; padding:0.4rem 0.5rem; font-size:0.72rem; border-radius:8px; background:transparent; border:1px solid var(--card-border); margin:0;">
+                                <i data-lucide="rotate-ccw" style="width:12px;height:12px;"></i><span>Reset</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="edit-fields">
+                        <label style="font-size:0.7rem; opacity:0.7;">Title</label>
+                        <input type="text" id="libTitle" style="padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;">
+                        <label style="font-size:0.7rem; opacity:0.7;">Artists (comma separated)</label>
+                        <input type="text" id="libArtists" style="padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;">
+                        <label style="font-size:0.7rem; opacity:0.7;">Genres (comma separated)</label>
+                        <input type="text" id="libGenres" style="padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;">
+                        <div style="display:flex; gap:0.5rem;">
+                            <div style="flex:2;"><label style="font-size:0.7rem; opacity:0.7;">Album</label>
+                                <input type="text" id="libAlbum" style="width:100%; padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;"></div>
+                            <div style="flex:1;"><label style="font-size:0.7rem; opacity:0.7;">Year</label>
+                                <input type="text" id="libYear" style="width:100%; padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;"></div>
+                        </div>
+                        <label style="font-size:0.7rem; opacity:0.7;">Composer</label>
+                        <input type="text" id="libComposer" style="padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;">
+
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.25rem;">
+                            <label style="font-size:0.7rem; color:var(--text-dim); font-weight:600;">Custom Tags</label>
+                            <button id="libAddTagBtn" type="button"
+                                style="width:auto; padding:0.25rem 0.6rem; font-size:0.7rem; border-radius:6px; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin:0;">
+                                <i data-lucide="plus" style="width:10px;height:10px;"></i><span>Add</span>
+                            </button>
+                        </div>
+                        <div id="libCustomTags" style="display:flex; flex-direction:column; gap:0.4rem;"></div>
+                    </div>
+
+                    <div class="edit-actions">
+                        <button id="libSaveMeta" type="button">Save metadata</button>
+                    </div>
+                </div>
+
+                <!-- Effects pane -->
+                <div id="libPaneFx" style="display:none; flex-direction:column; gap:0.55rem;">
+                    <div id="libFxControls" style="display:flex; flex-direction:column; gap:0.55rem;"></div>
+                    <p id="libFxNoOriginal" style="display:none; opacity:0.7; font-size:0.78rem; color:var(--primary);">No archived original — cannot reprocess.</p>
+                    <button id="libReprocess" type="button" style="margin-top:0.5rem;">Rebuild file with these effects</button>
+                </div>
+            </div>
+        </main>
 
         <!-- Toast Container -->
         <div id="toast" class="toast">
@@ -1384,73 +2106,8 @@
             </div>
         </div>
 
-        <!-- ============================ Library ============================ -->
-        <div id="libraryModal" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.7); backdrop-filter:blur(4px); overflow-y:auto; padding:2rem 1rem;">
-            <div style="max-width:760px; margin:0 auto; background:var(--card-bg, #15151c); border:1px solid var(--card-border); border-radius:16px; padding:1.25rem;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-                    <h2 style="margin:0; font-size:1.1rem;">Library</h2>
-                    <div style="display:flex; gap:0.5rem;">
-                        <button id="libRefreshBtn" type="button" style="width:auto; padding:0.4rem 0.8rem; font-size:0.78rem; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin:0;">Rebuild index</button>
-                        <button id="libCloseBtn" type="button" style="width:auto; padding:0.4rem 0.8rem; font-size:0.78rem; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin:0;">Close</button>
-                    </div>
-                </div>
-                <input type="text" id="libSearch" placeholder="Filter…" style="margin-bottom:0.75rem; padding:0.5rem 0.7rem; font-size:0.85rem; border-radius:8px;">
-                <div id="libList" style="display:flex; flex-direction:column; gap:0.4rem;"></div>
-                <p id="libEmpty" style="display:none; opacity:0.6; text-align:center; padding:2rem 0; font-size:0.85rem;">No saved tracks yet.</p>
-            </div>
-        </div>
+        <!-- Library + edit are now in-page views inside .card (see #libraryView / #libEditView). -->
 
-        <!-- Library item editor (metadata re-tag OR effects reprocess) -->
-        <div id="libEditModal" style="display:none; position:fixed; inset:0; z-index:1001; background:rgba(0,0,0,0.75); backdrop-filter:blur(4px); overflow-y:auto; padding:2rem 1rem;">
-            <div style="max-width:560px; margin:0 auto; background:var(--card-bg, #15151c); border:1px solid var(--card-border); border-radius:16px; padding:1.25rem;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
-                    <h2 id="libEditTitle" style="margin:0; font-size:1rem;">Edit</h2>
-                    <button id="libEditCloseBtn" type="button" style="width:auto; padding:0.35rem 0.7rem; font-size:0.78rem; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin:0;">Close</button>
-                </div>
-                <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
-                    <button id="libTabMeta" type="button" class="lib-tab" style="flex:1; padding:0.45rem; font-size:0.8rem; margin:0;">Metadata</button>
-                    <button id="libTabFx" type="button" class="lib-tab" style="flex:1; padding:0.45rem; font-size:0.8rem; margin:0; background:rgba(255,255,255,0.05); border:1px solid var(--card-border);">Effects</button>
-                </div>
-
-                <!-- Metadata pane -->
-                <div id="libPaneMeta" style="display:flex; flex-direction:column; gap:0.55rem;">
-                    <label style="font-size:0.7rem; opacity:0.7;">Title</label>
-                    <input type="text" id="libTitle" style="padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;">
-                    <label style="font-size:0.7rem; opacity:0.7;">Artists (comma separated)</label>
-                    <input type="text" id="libArtists" style="padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;">
-                    <label style="font-size:0.7rem; opacity:0.7;">Genres (comma separated)</label>
-                    <input type="text" id="libGenres" style="padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;">
-                    <div style="display:flex; gap:0.5rem;">
-                        <div style="flex:2;"><label style="font-size:0.7rem; opacity:0.7;">Album</label>
-                            <input type="text" id="libAlbum" style="width:100%; padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;"></div>
-                        <div style="flex:1;"><label style="font-size:0.7rem; opacity:0.7;">Year</label>
-                            <input type="text" id="libYear" style="width:100%; padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;"></div>
-                    </div>
-                    <label style="font-size:0.7rem; opacity:0.7;">Composer</label>
-                    <input type="text" id="libComposer" style="padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;">
-                    <button id="libSaveMeta" type="button" style="margin-top:0.5rem;">Save metadata (re-tag in place)</button>
-                </div>
-
-                <!-- Effects pane (controls cloned from main UI at runtime) -->
-                <div id="libPaneFx" style="display:none; flex-direction:column; gap:0.55rem;">
-                    <div id="libFxControls" style="display:flex; flex-direction:column; gap:0.55rem;"></div>
-                    <p id="libFxNoOriginal" style="display:none; opacity:0.7; font-size:0.78rem; color:var(--primary);">No archived original for this track — cannot reprocess.</p>
-                    <button id="libReprocess" type="button" style="margin-top:0.5rem;">Rebuild file with these effects</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Footer with Donate Button -->
-        <footer style="text-align: center; padding: 1.5rem 0; margin-top: 1rem; opacity: 0.9;">
-            <a href="https://www.paypal.com/donate/?hosted_button_id=5FJBP8PNCNY2A" target="_blank"
-                class="paypal-donate-btn" title="Support the project">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                    <path
-                        d="M20.067 8.478c.492.2.822.449.95.733.127.284.116.634-.035 1.018-.466 1.181-1.841 3.518-4.126 7.01-.19.289-.25.467-.183.534.067.067.24.033.518-.1 1.077-.514 2.115-.992 3.111-1.436.425-.189.782-.162 1.071.08.288.242.427.561.417.958-.013.43-.19.83-.531 1.201-2.924 3.197-6.177 4.796-9.759 4.796-1.574 0-2.887-.314-3.94-.943C6.486 21.696 6 20.733 6 19.439c0-.495.127-1.139.38-1.933l1.833-5.741c.148-.463.097-.83-.151-1.101-.249-.271-.621-.406-1.116-.406H5.21c-.424 0-.74-.131-.948-.393-.208-.261-.264-.582-.17-.962.138-.567.42-1.072.844-1.517.424-.445.92-.767 1.487-.967C9.28 6.438 12.015 5.51 14.629 5.51c2.14 0 3.754.437 4.842 1.31 1.064.852 1.536 1.94 1.417 3.264-.047.534-.236 1.157-.567 1.868l-.13.279c-.114.24-.075.405.116.494.492.23.822.479.95.748.127.269.116.604-.035.988l-.203.513c-.114.289-.047.458.201.506.248.048.544-.049.887-.291.564-.396.969-.877 1.216-1.442.247-.565.312-1.166.196-1.804-.203-1.125-.873-2.022-2.01-2.691-.492-.29-.822-.539-.95-.748-.127-.209-.116-.514.035-.914.549-1.442 1.637-3.926 3.264-7.452.115-.24.238-.36.37-.36.132 0 .285.084.458.252l.279.279c.191.191.242.385.153.582-.266.587-.806 1.501-1.619 2.74l-.902 1.383c-.114.175-.102.327.037.455.139.128.329.176.57.145 1.44-.187 2.651-.017 3.633.51z" />
-                </svg>
-                Support Me
-            </a>
-        </footer>
 
         <script>
             lucide.createIcons();
@@ -1490,12 +2147,11 @@
             // --- Elements ---
             const els = {
                 urlInput: document.getElementById('urlInput'),
+                inputGroup: document.getElementById('inputGroup'),
                 searchBtn: document.getElementById('searchBtn'),
+                searchResults: document.getElementById('searchResults'),
                 preview: document.getElementById('preview'),
                 optionsPanel: document.getElementById('optionsPanel'),
-                thumb: document.getElementById('thumb'),
-                title: document.getElementById('title'),
-                author: document.getElementById('author'),
                 previewAudio: document.getElementById('previewAudio'),
                 previewBtn: document.getElementById('previewBtn'),
                 playbackPointer: document.getElementById('playbackPointer'),
@@ -1637,46 +2293,49 @@
             }
 
             // --- Thumbnail Upload/Reset ---
-            els.uploadThumbBtn.addEventListener('click', () => els.thumbUpload.click());
-            els.thumbUpload.addEventListener('change', (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = (ev) => {
-                    const img = new Image();
-                    img.onload = () => {
-                        // Downscale to a square cover (max 800px) and re-encode as
-                        // JPEG to keep the embedded art (and the request body) small.
-                        // Transparency is flattened onto black to suit the dark theme.
-                        const MAX = 800;
-                        let { width: w, height: h } = img;
-                        const scale = Math.min(1, MAX / Math.max(w, h));
-                        w = Math.round(w * scale); h = Math.round(h * scale);
-                        const canvas = document.createElement('canvas');
-                        canvas.width = w; canvas.height = h;
-                        const ctx = canvas.getContext('2d');
-                        ctx.fillStyle = '#000';
-                        ctx.fillRect(0, 0, w, h);
-                        ctx.drawImage(img, 0, 0, w, h);
-                        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-                        els.metaThumb.src = dataUrl;
-                        customThumbnailBase64 = dataUrl.split(',')[1];
-                        els.resetThumbBtn.style.display = 'flex';
+            // --- Reusable cover uploader (download form + library editor) ---
+            // Reads a file, downscales to <=800px JPEG, sets the <img>, and hands
+            // the base64 back via onResult(b64|null). getReset() supplies the revert src.
+            function wireCover(fileInput, img, uploadBtn, resetBtn, onResult, getReset) {
+                uploadBtn.addEventListener('click', () => fileInput.click());
+                fileInput.addEventListener('change', (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                        const im = new Image();
+                        im.onload = () => {
+                            // Downscale (max 800px) and re-encode as JPEG to keep the
+                            // embedded art (and request body) small; flatten onto black.
+                            const MAX = 800;
+                            let { width: w, height: h } = im;
+                            const scale = Math.min(1, MAX / Math.max(w, h));
+                            w = Math.round(w * scale); h = Math.round(h * scale);
+                            const canvas = document.createElement('canvas');
+                            canvas.width = w; canvas.height = h;
+                            const ctx = canvas.getContext('2d');
+                            ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
+                            ctx.drawImage(im, 0, 0, w, h);
+                            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                            img.src = dataUrl;
+                            onResult(dataUrl.split(',')[1]);
+                        };
+                        im.onerror = () => showError('Could not read that image');
+                        im.src = ev.target.result;
                     };
-                    img.onerror = () => showError('Could not read that image');
-                    img.src = ev.target.result;
-                };
-                reader.readAsDataURL(file);
-            });
-            els.resetThumbBtn.addEventListener('click', () => {
-                els.metaThumb.src = originalThumbnailUrl;
-                customThumbnailBase64 = null;
-                els.resetThumbBtn.style.display = 'none';
-                els.thumbUpload.value = '';
-            });
+                    reader.readAsDataURL(file);
+                });
+                resetBtn.addEventListener('click', () => {
+                    img.src = getReset() || '';
+                    onResult(null);
+                    fileInput.value = '';
+                });
+            }
+            wireCover(els.thumbUpload, els.metaThumb, els.uploadThumbBtn, els.resetThumbBtn,
+                b64 => { customThumbnailBase64 = b64; }, () => originalThumbnailUrl);
 
-            // --- Custom Tags ---
-            function addCustomTag(key = '', value = '') {
+            // --- Custom Tags (reusable across the download form + library editor) ---
+            function addCustomTag(container, key = '', value = '') {
                 const row = document.createElement('div');
                 row.style.cssText = 'display:flex; gap:0.4rem; align-items:center;';
                 row.innerHTML = `
@@ -1684,18 +2343,18 @@
                         style="flex:1; padding:0.3rem 0.5rem; font-size:0.75rem; border-radius:6px; background:rgba(255,255,255,0.03); border:1px solid var(--card-border); color:#fff;">
                     <input type="text" placeholder="Value" value="${value}" class="custom-tag-value"
                         style="flex:2; padding:0.3rem 0.5rem; font-size:0.75rem; border-radius:6px; background:rgba(255,255,255,0.03); border:1px solid var(--card-border); color:#fff;">
-                    <button type="button" onclick="this.parentElement.remove()" 
+                    <button type="button" onclick="this.parentElement.remove()"
                         style="width:24px; height:24px; padding:0; margin:0; border-radius:6px; background:rgba(255,0,80,0.15); border:1px solid rgba(255,0,80,0.3); flex-shrink:0; display:flex; align-items:center; justify-content:center;">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                     </button>
                 `;
-                els.customTagsContainer.appendChild(row);
+                container.appendChild(row);
             }
-            els.addTagBtn.addEventListener('click', () => addCustomTag());
+            els.addTagBtn.addEventListener('click', () => addCustomTag(els.customTagsContainer));
 
-            function getCustomTags() {
+            function getCustomTags(container) {
                 const tags = [];
-                els.customTagsContainer.querySelectorAll('div').forEach(row => {
+                container.querySelectorAll(':scope > div').forEach(row => {
                     const key = row.querySelector('.custom-tag-key')?.value?.trim();
                     const val = row.querySelector('.custom-tag-value')?.value?.trim();
                     if (key && val) tags.push({ key, value: val });
@@ -2126,10 +2785,10 @@
 
                 // Range changes no longer stop playback (full-file model). Just keep
                 // the playhead inside the new window.
-                if (!activeAudio.paused) {
-                    const cur = activeAudio.currentTime;
+                if (!previewAudio.paused) {
+                    const cur = previewAudio.currentTime;
                     if (cur < start || cur > end) {
-                        try { activeAudio.currentTime = start; } catch (e) { }
+                        try { previewAudio.currentTime = start; } catch (e) { }
                     }
                 }
             }
@@ -2156,7 +2815,7 @@
                 els.playbackPointer.style.display = 'block';
                 els.playbackPointer.style.left = (pct * 100) + '%';
                 els.currentTimeDisplay.textContent = formatTime(t);
-                if (currentSrc) { try { activeAudio.currentTime = t; } catch (e) { } }
+                if (currentSrc) { try { previewAudio.currentTime = t; } catch (e) { } }
             });
 
             // Manual time editing — accepts ss, mm:ss, or h:mm:ss; clamps; reformats.
@@ -2235,10 +2894,60 @@
             els.silenceThreshSelect.addEventListener('change', updateSilenceVisualization);
 
             // --- Search Flow ---
-            els.searchBtn.addEventListener('click', async () => {
-                const url = els.urlInput.value.trim();
-                if (!url) { showError("Please enter a YouTube URL"); return; }
+            // Treat input as a URL/ID when it looks like one; otherwise search.
+            function looksLikeYouTube(s) {
+                return /(?:youtube\.com|youtu\.be)/i.test(s);
+            }
+            function hideSearchResults() {
+                els.searchResults.style.display = 'none';
+                els.searchResults.innerHTML = '';
+            }
+            function fmtSrDur(s) {
+                if (!s && s !== 0) return '';
+                s = Math.round(s); const m = Math.floor(s / 60), r = s % 60;
+                return `${m}:${String(r).padStart(2, '0')}`;
+            }
+            function renderSearchResults(list) {
+                const box = els.searchResults; box.innerHTML = '';
+                if (!list.length) { box.style.display = 'none'; showError('No results'); return; }
+                list.forEach(r => {
+                    const row = document.createElement('div'); row.className = 'sr-row';
+                    const img = document.createElement('img'); img.loading = 'lazy'; img.alt = '';
+                    img.src = r.thumbnail || '';
+                    const info = document.createElement('div'); info.className = 'sr-info';
+                    const t = document.createElement('div'); t.className = 'sr-ttl'; t.textContent = r.title || r.video_id; t.title = t.textContent;
+                    const sub = document.createElement('div'); sub.className = 'sr-sub';
+                    sub.textContent = [r.author, fmtSrDur(r.duration)].filter(Boolean).join('  ·  ');
+                    info.append(t, sub);
+                    row.append(img, info);
+                    row.addEventListener('click', () => runSearch(r.url));
+                    box.appendChild(row);
+                });
+                box.style.display = 'flex';
+            }
+            async function doYtSearch(q) {
+                hideSearchResults();
+                setLoading(els.searchBtn, true);
+                try {
+                    const res = await fetch('/yt-search?q=' + encodeURIComponent(q));
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) throw new Error(data.detail || 'Search failed');
+                    renderSearchResults(data.results || []);
+                } catch (e) { showError(e.message); }
+                finally { setLoading(els.searchBtn, false); }
+            }
 
+            els.searchBtn.addEventListener('click', () => {
+                const q = els.urlInput.value.trim();
+                if (!q) { showError("Enter a YouTube URL or search terms"); return; }
+                if (looksLikeYouTube(q)) runSearch(q);
+                else doYtSearch(q);
+            });
+            els.urlInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); els.searchBtn.click(); } });
+
+            async function runSearch(url) {
+                els.urlInput.value = url;      // downstream /stream + /save read this field
+                hideSearchResults();
                 setLoading(els.searchBtn, true);
 
                 try {
@@ -2251,9 +2960,6 @@
                     const data = await res.json();
 
                     currentVideoId = data.video_id; // Fixed: was data.id
-                    els.thumb.src = data.thumbnail;
-                    els.title.textContent = data.title;
-                    els.author.textContent = data.author;
 
                     // Pre-populate metadata fields
                     originalThumbnailUrl = data.thumbnail;
@@ -2266,10 +2972,9 @@
                     selectedGenres = [];
                     renderGenreTags();
                     customThumbnailBase64 = null;
-                    els.resetThumbBtn.style.display = 'none';
                     // Reset custom tags and add default Composer tag
                     els.customTagsContainer.innerHTML = '';
-                    addCustomTag('Composer', '');
+                    addCustomTag(els.customTagsContainer, 'Composer', '');
 
                     // Pre-populate Year from upload_date (YYYYMMDD -> YYYY)
                     if (data.upload_date && data.upload_date.length >= 4) {
@@ -2281,7 +2986,8 @@
                     els.preview.style.display = 'flex';
                     els.optionsPanel.style.display = 'grid';
                     els.searchBtn.style.display = 'none';
-                    document.querySelector('.container').classList.add('expanded');
+                    // Collapse the queried URL — its value persists for /stream + /save.
+                    els.inputGroup.style.display = 'none';
 
                     initRangeSlider(data.duration);
                     updateFilenamePreview();
@@ -2305,14 +3011,14 @@
                 } finally {
                     setLoading(els.searchBtn, false);
                 }
-            });
+            }
 
             // --- Filename Preview (auto-generated from metadata) ---
             function updateFilenamePreview() {
                 const title = els.metaTitle.value.trim() || 'Title';
                 const artist = selectedArtists.length > 0 ? selectedArtists.join(', ') : '';
                 const album = els.metaAlbum.value.trim();
-                const composer = getCustomTags().find(t => t.key.toLowerCase() === 'composer')?.value || '';
+                const composer = getCustomTags(els.customTagsContainer).find(t => t.key.toLowerCase() === 'composer')?.value || '';
 
                 let parts = [title];
                 if (album) parts[0] = `${title} (${album})`;
@@ -2356,13 +3062,13 @@
             // current position; otherwise the next Play picks it up. Clears any
             // active A/B snapshot selection (you're now on the live controls).
             function onEffectChange() {
-                if (!activeAudio.paused) {
+                if (!previewAudio.paused) {
                     // You're hearing this combo live, so snapshot it too — same as
                     // pressing Play. Keeps the A/B list consistent with playback.
                     const p = effectParams();
                     recordSnapshot(p);
                     renderSnapshots();
-                    playPreview(previewUrlFrom(p), activeAudio.currentTime);
+                    playPreview(previewUrlFrom(p), previewAudio.currentTime);
                 } else {
                     // Not playing: no audio heard yet, so don't snapshot — just drop
                     // the active highlight (controls no longer match a saved combo).
@@ -2371,9 +3077,12 @@
                 }
             }
 
+            // NB: originalToggle is NOT here — it has its own change handler that
+            // already calls onEffectChange (binding both fired it twice and raced
+            // two crossfades, so the audio didn't follow the selected mix).
             [els.normalizeToggle, els.normalizeISelect, els.eqToggle, els.eqPresetSelect,
-            els.mbcToggle, els.mbcPresetSelect, els.enhanceModeSelect, els.enhanceIntensitySelect,
-            els.originalToggle].forEach(el => {
+            els.mbcToggle, els.mbcPresetSelect, els.enhanceModeSelect, els.enhanceIntensitySelect
+            ].forEach(el => {
                 if (el) el.addEventListener('change', onEffectChange);
             });
 
@@ -2383,80 +3092,47 @@
             // maps 1:1 to the timeline and seeking/looping is trivial.
             let currentSrc = '';   // /stream URL currently loaded (per effect set)
 
-            // --- Dual-element crossfade for gap-free A/B switching ---
-            // A second <audio> lets a new combo fade in while the old fades out,
-            // so flipping snapshots never has a moment of silence. UI events bind
-            // to both elements but only act on whichever is `activeAudio`.
-            let activeAudio = els.previewAudio;
-            let idleAudio = els.previewAudio.cloneNode(true);
-            idleAudio.removeAttribute('id');
-            els.previewAudio.parentNode.appendChild(idleAudio);
-            const XFADE_MS = 180;
-            const SYNC_LEAD = 0.06;   // s of head-start to cover play-start latency (kills the echo/flam)
-            let fadeRAF = null;
-            let loadToken = 0;   // guards against stale loads when switching fast
+            // --- Single-element preview player ---
+            // One <audio> (els.previewAudio). Switching combos swaps the src and
+            // resumes at the captured position. Simple and reliable: it always
+            // switches and never spuriously restarts. (A brief load gap is fine —
+            // already-rendered combos are cached so it's near-instant.)
+            const previewAudio = els.previewAudio;
 
-            function crossfade(elUp, elDown) {
-                if (fadeRAF) cancelAnimationFrame(fadeRAF);
-                const t0 = performance.now();
-                try { elUp.volume = 0; } catch (e) { }
-                (function step(now) {
-                    const k = Math.min(1, (now - t0) / XFADE_MS);
-                    try { elUp.volume = k; if (elDown) elDown.volume = 1 - k; } catch (e) { }
-                    if (k < 1) { fadeRAF = requestAnimationFrame(step); }
-                    else {
-                        fadeRAF = null;
-                        try { elUp.volume = 1; } catch (e) { }
-                        if (elDown) { try { elDown.pause(); elDown.volume = 1; } catch (e) { } }
-                    }
-                })(performance.now());
-            }
-
-            function bindAudioEvents(a) {
-                a.addEventListener('error', () => {
-                    if (!a.src || a.src === window.location.href) return;
-                    if (a !== activeAudio) return;   // ignore the idle buffer
-                    showError("Preview error: " + (a.error ? a.error.message : "source failure"));
-                    isStreaming = false;
-                    stopPlayback();
-                });
-                a.addEventListener('playing', () => {
-                    if (a !== activeAudio) return;
-                    isStreaming = false;
-                    setLoading(els.previewBtn, false);
-                    els.previewBtn.classList.add('playing');
-                    els.previewBtn.dataset.loading = "";
-                    setIcon(els.previewBtn, 'pause');
-                    els.playbackPointer.style.display = 'block';
-                });
-                a.addEventListener('loadedmetadata', () => {
-                    if (a !== activeAudio) return;
-                    els.totalDisplay.textContent = formatTime(videoDuration || a.duration);
-                });
-                // Playhead + in-range looping driven by the audio clock.
-                a.addEventListener('timeupdate', () => {
-                    if (a !== activeAudio) return;
-                    const cur = a.currentTime;
-                    if (!videoDuration) return;
-                    const end = rangeEnd();
-                    if (cur >= end - 0.04) { try { a.currentTime = rangeStart(); } catch (e) { } return; }
-                    const pct = Math.min(cur, videoDuration) / videoDuration * 100;
-                    els.playbackPointer.style.left = pct + '%';
-                    els.currentTimeDisplay.textContent = formatTime(cur);
-                });
-                a.addEventListener('pause', () => {
-                    if (a !== activeAudio) return;   // idle pausing after a fade must not flip the icon
-                    els.previewBtn.classList.remove('playing');
-                    setIcon(els.previewBtn, 'play');
-                });
-                // Full file loops within range, so 'ended' only fires if range = whole file.
-                a.addEventListener('ended', () => {
-                    if (a !== activeAudio) return;
-                    try { a.currentTime = rangeStart(); a.play(); } catch (e) { stopPlayback(); }
-                });
-            }
-            bindAudioEvents(els.previewAudio);
-            bindAudioEvents(idleAudio);
+            previewAudio.addEventListener('error', () => {
+                if (!previewAudio.src || previewAudio.src === window.location.href) return;
+                showError("Preview error: " + (previewAudio.error ? previewAudio.error.message : "source failure"));
+                isStreaming = false;
+                stopPlayback();
+            });
+            previewAudio.addEventListener('playing', () => {
+                isStreaming = false;
+                setLoading(els.previewBtn, false);
+                els.previewBtn.classList.add('playing');
+                els.previewBtn.dataset.loading = "";
+                setIcon(els.previewBtn, 'pause');
+                els.playbackPointer.style.display = 'block';
+            });
+            previewAudio.addEventListener('loadedmetadata', () => {
+                els.totalDisplay.textContent = formatTime(videoDuration || previewAudio.duration);
+            });
+            // Playhead + in-range looping driven by the audio clock.
+            previewAudio.addEventListener('timeupdate', () => {
+                const cur = previewAudio.currentTime;
+                if (!videoDuration) return;
+                const end = rangeEnd();
+                if (cur >= end - 0.04) { try { previewAudio.currentTime = rangeStart(); } catch (e) { } return; }
+                const pct = Math.min(cur, videoDuration) / videoDuration * 100;
+                els.playbackPointer.style.left = pct + '%';
+                els.currentTimeDisplay.textContent = formatTime(cur);
+            });
+            previewAudio.addEventListener('pause', () => {
+                els.previewBtn.classList.remove('playing');
+                setIcon(els.previewBtn, 'play');
+            });
+            previewAudio.addEventListener('ended', () => {
+                try { previewAudio.currentTime = rangeStart(); previewAudio.play(); } catch (e) { stopPlayback(); }
+            });
 
             function rangeStart() { return parseFloat(els.startSlider.value) || 0; }
             function rangeEnd() { return parseFloat(els.endSlider.value) || videoDuration; }
@@ -2496,69 +3172,66 @@
                 return `/stream?${params.toString()}`;
             }
 
-            // Load (if needed) and play from `seekTo` (defaults to range start).
-            // Switching to a new combo loads it into the idle element and
-            // crossfades, so there's no silent gap between A/B chips.
+            let switchToken = 0;   // ignore stale canplay handlers when switching fast
+
+            // Play `url`, resuming at `seekTo` (defaults to range start). Switching
+            // combos swaps the src and seeks back to the captured position.
             function playPreview(url, seekTo) {
                 const startAt = (seekTo != null) ? seekTo : rangeStart();
 
-                // Same combo already on the active element -> just (re)play it.
-                if (url === currentSrc && activeAudio.src) {
-                    try { if (Math.abs(activeAudio.currentTime - startAt) > 0.3) activeAudio.currentTime = startAt; } catch (e) { }
-                    const pr = activeAudio.play();
+                // Same combo already loaded -> just (re)play it in place.
+                if (url === currentSrc && previewAudio.src) {
+                    try { if (Math.abs(previewAudio.currentTime - startAt) > 0.3) previewAudio.currentTime = startAt; } catch (e) { }
+                    const pr = previewAudio.play();
                     if (pr) pr.catch(e => { if (e.name !== 'AbortError') { showError('Playback failed: ' + e.message); stopPlayback(); } });
                     return;
                 }
 
-                const oldActive = activeAudio;
-                const wasPlaying = !oldActive.paused && !oldActive.ended;
-                const target = idleAudio;   // load the new combo into the spare element
-                const myToken = ++loadToken;
-
+                // Resume where we are now (keep position across an effect/mix switch).
+                const resumeAt = (previewAudio.src && previewAudio.currentTime > 0) ? previewAudio.currentTime : startAt;
+                const myToken = ++switchToken;
+                currentSrc = url;
                 isStreaming = true;
-                if (!wasPlaying) { setLoading(els.previewBtn, true); els.previewBtn.dataset.loading = 'true'; }
-                target.src = url;
-                target.load();
+                setLoading(els.previewBtn, true);
+                els.previewBtn.dataset.loading = 'true';
 
+                let started = false;
                 const begin = () => {
-                    if (myToken !== loadToken) return;   // superseded by a newer switch
-                    // Align to the OLD element's LIVE position (it kept playing
-                    // while the new one loaded) plus a small lead, so the two
-                    // overlap in phase instead of flamming/echoing.
-                    const anchor = wasPlaying ? (oldActive.currentTime + SYNC_LEAD) : startAt;
-                    try { target.currentTime = anchor; } catch (e) { }
-                    try { target.volume = wasPlaying ? 0 : 1; } catch (e) { }
-                    // Promote the new element to active so UI events follow it.
-                    activeAudio = target;
-                    idleAudio = oldActive;
-                    currentSrc = url;
-                    const pr = target.play();
+                    if (started || myToken !== switchToken) return;
+                    started = true;
+                    // Clamp the resume seek strictly inside the new file. Seeking past
+                    // EOF (or before duration is known) makes the browser request a
+                    // byte range the server can't satisfy -> 416 -> media error/stop.
+                    const dur = previewAudio.duration;
+                    let at = resumeAt;
+                    if (dur && isFinite(dur)) at = Math.min(at, dur - 0.3);
+                    if (!(at >= 0)) at = 0;
+                    try { if (Math.abs(previewAudio.currentTime - at) > 0.25) previewAudio.currentTime = at; } catch (e) { }
+                    const pr = previewAudio.play();
                     if (pr) pr.catch(e => { if (e.name !== 'AbortError') { showError('Playback failed: ' + e.message); stopPlayback(); } });
-                    if (wasPlaying) {
-                        crossfade(target, oldActive);   // new in, old out (old pauses at the end)
-                    } else {
-                        try { oldActive.pause(); oldActive.volume = 1; } catch (e) { }
-                    }
                 };
-                target.addEventListener('canplay', begin, { once: true });
+                // Seek only once duration is known (loadedmetadata) so the range is valid.
+                previewAudio.addEventListener('loadedmetadata', begin, { once: true });
+                previewAudio.addEventListener('canplay', begin, { once: true });
+                previewAudio.src = url;
+                previewAudio.load();
+                if (previewAudio.readyState >= 1) begin();
             }
 
             els.previewBtn.addEventListener('click', () => {
                 if (els.previewBtn.disabled) return;
-                if (!activeAudio.paused) { activeAudio.pause(); return; }
+                if (!previewAudio.paused) { previewAudio.pause(); return; }
                 const p = effectParams();
                 const url = previewUrlFrom(p);
-                const resume = (currentSrc === url && activeAudio.currentTime > 0);
+                const resume = (currentSrc === url && previewAudio.currentTime > 0);
                 recordSnapshot(p);   // A/B: remember this combo (sets it active)
                 renderSnapshots();
-                // Resume from current position if same render; else start at range.
-                playPreview(url, resume ? activeAudio.currentTime : rangeStart());
+                playPreview(url, resume ? previewAudio.currentTime : rangeStart());
             });
 
             function stopPlayback() {
                 isStreaming = false;
-                if (fadeRAF) { cancelAnimationFrame(fadeRAF); fadeRAF = null; }
-                [activeAudio, idleAudio].forEach(a => { try { a.pause(); a.volume = 1; } catch (e) { } });
+                try { previewAudio.pause(); } catch (e) { }
                 els.previewBtn.classList.remove('playing');
                 els.previewBtn.dataset.loading = "";
                 setLoading(els.previewBtn, false);
@@ -2595,7 +3268,7 @@
                 if (!s) {
                     s = { id: ++snapSeq, params: { ...p }, label: snapLabel(p) };
                     snapshots.unshift(s);
-                    if (snapshots.length > 8) snapshots.length = 8;
+                    if (snapshots.length > 12) snapshots.length = 12;
                 }
                 activeSnapshotId = s.id;
             }
@@ -2644,9 +3317,10 @@
                 applyParamsToControls(s.params);   // reflect combo in the controls
                 activeSnapshotId = id;
                 renderSnapshots();
-                // Play immediately: resume in place if already playing, else from range start.
-                const resume = !activeAudio.paused;
-                playPreview(previewUrlFrom(s.params), resume ? activeAudio.currentTime : rangeStart());
+                // Keep the current playhead position (don't restart) whenever a
+                // track is loaded — whether it's currently playing or paused.
+                const pos = (currentSrc && previewAudio.currentTime > 0) ? previewAudio.currentTime : rangeStart();
+                playPreview(previewUrlFrom(s.params), pos);
             }
             els.abClear.addEventListener('click', () => { snapshots = []; activeSnapshotId = null; renderSnapshots(); });
 
@@ -2700,7 +3374,7 @@
                 // Custom tags + cover go in the POST body (a base64 image is far
                 // too large for the query string and would abort the request).
                 const metadataExtra = {};
-                const customTags = getCustomTags();
+                const customTags = getCustomTags(els.customTagsContainer);
                 if (customTags.length > 0) metadataExtra.custom_tags = customTags;
                 if (customThumbnailBase64) metadataExtra.thumbnail_base64 = customThumbnailBase64;
                 const saveBody = JSON.stringify({
@@ -2778,6 +3452,14 @@
 
             els.uploadNextBtn.addEventListener('click', () => location.reload());
 
+            // Clear this session's preview "mix" renders from the SSD cache when
+            // the page is closed/reloaded (the source cache is kept). The 2h
+            // server-side sweep is the backstop for abandoned tabs.
+            window.addEventListener('beforeunload', () => {
+                const u = (els.urlInput.value || '').trim();
+                if (u) navigator.sendBeacon('/preview-cache/clear?url=' + encodeURIComponent(u));
+            });
+
             // --- Utils ---
             function setLoading(btn, loading) {
                 const icon = btn.querySelector('i, svg');
@@ -2827,11 +3509,123 @@
             }
 
             // ===================== Library (save-dir mode) =====================
+            // In-page views (no modals): Download <-> Library <-> Edit, with back
+            // arrows. Hiding (not destroying) the download view preserves its state.
             (function () {
                 const $ = id => document.getElementById(id);
-                const modal = $('libraryModal'), editModal = $('libEditModal');
                 let libItems = [];
-                let editing = null; // { id, hasOriginal }
+                let editing = null;            // { id }
+                let libEditCoverBase64 = null; // set if the user uploads a new cover
+                let libEditResetUrl = '';      // current saved cover (revert target)
+
+                const PLACEHOLDER = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48">' +
+                    '<rect width="48" height="48" fill="#222"/>' +
+                    '<path d="M19 14v11a3 3 0 1 1-2-2.83V12l12-2v9a3 3 0 1 1-2-2.83V8z" fill="#666"/></svg>');
+                const ICON_PLAY = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+                const ICON_PAUSE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
+
+                const ICON_PLAY_LG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+                const ICON_PAUSE_LG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>';
+
+                // Standalone player + now-playing panel for the library.
+                const libAudio = new Audio();
+                let libPlayingId = null;
+                let visibleItems = [];                  // current filtered+sorted list (prev/next scope)
+                let libFilters = [];                    // [{field, value}]
+                let libSort = { field: 'created_at', dir: -1 };
+                let libPlaylists = [];                  // sidebar playlists
+                let currentSource = { type: 'all' };    // {type:'all'} | {type:'playlist', ...playlist}
+                let createFilters = [];                 // dynamic-playlist builder chips
+                let createKind = 'manual';
+                let createCoverBase64 = null;
+
+                const itemById = id => libItems.find(x => x.id === id);
+
+                function playById(id) {
+                    libPlayingId = id;
+                    libAudio.src = `/library/${id}/audio`;
+                    libAudio.play().catch(() => {});
+                    renderNowPlaying();
+                }
+                function libTogglePlay(id) {
+                    if (libPlayingId === id) {
+                        if (libAudio.paused) libAudio.play().catch(() => {}); else libAudio.pause();
+                        return;
+                    }
+                    playById(id);
+                }
+                function stepTrack(delta) {
+                    if (!visibleItems.length) return;
+                    let i = visibleItems.findIndex(x => x.id === libPlayingId);
+                    if (i < 0) i = delta > 0 ? -1 : 0;
+                    i = (i + delta + visibleItems.length) % visibleItems.length;
+                    playById(visibleItems[i].id);
+                }
+
+                function updateLibPlayIcons() {
+                    document.querySelectorAll('#libList .lib-play').forEach(b => {
+                        const on = Number(b.dataset.id) === libPlayingId && !libAudio.paused;
+                        b.classList.toggle('playing', on);
+                        b.innerHTML = on ? ICON_PAUSE : ICON_PLAY;
+                    });
+                    document.querySelectorAll('#libList .lib-row').forEach(r => {
+                        r.classList.toggle('playing', Number(r.dataset.id) === libPlayingId);
+                    });
+                    const pb = $('npPlay');
+                    if (pb) pb.innerHTML = (libPlayingId != null && !libAudio.paused) ? ICON_PAUSE_LG : ICON_PLAY_LG;
+                }
+
+                // Put text in an inner span; if it overflows, loop-scroll it (ping-pong)
+                // so long titles are fully readable.
+                function setMarquee(el, text) {
+                    el.innerHTML = '';
+                    const span = document.createElement('span');
+                    span.className = 'np-marq'; span.textContent = text;
+                    el.appendChild(span);
+                    el.classList.remove('scroll');
+                    requestAnimationFrame(() => {
+                        const over = span.scrollWidth - el.clientWidth;
+                        if (over > 4) {
+                            el.style.setProperty('--marq-dist', (-(over + 8)) + 'px');
+                            el.style.setProperty('--marq-dur', Math.max(5, (over + 8) / 22) + 's');
+                            el.classList.add('scroll');
+                        }
+                    });
+                }
+                function renderNowPlaying() {
+                    const it = itemById(libPlayingId);
+                    if (!it) { $('npEmpty').style.display = 'block'; $('npBody').style.display = 'none'; return; }
+                    $('npEmpty').style.display = 'none'; $('npBody').style.display = 'block';
+                    const cov = $('npCover');
+                    cov.onerror = () => { cov.onerror = null; cov.src = PLACEHOLDER; };
+                    cov.src = `/library/${it.id}/cover?v=${encodeURIComponent(it.updated_at || '')}`;
+                    setMarquee($('npTitle'), it.title || it.filename || it.youtube_id);
+                    setMarquee($('npArtist'), (it.artists || []).join(', '));
+                    updateLibPlayIcons();
+                }
+
+                libAudio.addEventListener('play', updateLibPlayIcons);
+                libAudio.addEventListener('pause', updateLibPlayIcons);
+                libAudio.addEventListener('ended', () => stepTrack(1));
+                libAudio.addEventListener('timeupdate', () => {
+                    if (!libAudio.duration) return;
+                    $('npSeek').value = String(Math.round(libAudio.currentTime / libAudio.duration * 1000));
+                    $('npCur').textContent = fmtDur(libAudio.currentTime);
+                });
+                libAudio.addEventListener('loadedmetadata', () => { $('npDur').textContent = fmtDur(libAudio.duration); });
+
+                function showView(name) {
+                    $('downloadView').style.display = name === 'download' ? 'block' : 'none';
+                    $('libraryView').style.display = name === 'library' ? 'block' : 'none';
+                    $('libEditView').style.display = name === 'libEdit' ? 'block' : 'none';
+                    $('navDownload').classList.toggle('active', name === 'download');
+                    $('navLibrary').classList.toggle('active', name === 'library' || name === 'libEdit');
+                    // Only one player audible at a time: pause the other tab's audio.
+                    if (name === 'download') { libAudio.pause(); }
+                    else { stopPlayback(); }   // pause the download preview when entering library/edit
+                    window.scrollTo(0, 0);
+                }
 
                 function fmtDur(s) {
                     if (!s && s !== 0) return '';
@@ -2849,39 +3643,305 @@
                     } catch (e) { showError('Failed to load library: ' + e.message); }
                 }
 
-                function renderLibrary() {
+                // --- Filter / sort engine (client-side over libItems) ---
+                function fieldText(it, field) {
+                    switch (field) {
+                        case 'title': return it.title || '';
+                        case 'artist': return (it.artists || []).join(' ');
+                        case 'genre': return (it.genres || []).join(' ');
+                        case 'album': return it.album || '';
+                        case 'year': return it.year != null ? String(it.year) : '';
+                        case 'duration': return it.duration != null ? String(it.duration) : '';
+                        case 'created_at': return it.created_at || '';
+                        case 'composer': return (it.custom_fields && (it.custom_fields.Composer || it.custom_fields.composer)) || '';
+                        default: return (it.custom_fields && it.custom_fields[field]) || '';
+                    }
+                }
+                function libFieldOptions() {
+                    const fields = ['title', 'artist', 'genre', 'album', 'year', 'composer'];
+                    const seen = new Set(fields.map(f => f.toLowerCase()));
+                    libItems.forEach(it => Object.keys(it.custom_fields || {}).forEach(k => {
+                        if (!seen.has(k.toLowerCase())) { seen.add(k.toLowerCase()); fields.push(k); }
+                    }));
+                    return fields;
+                }
+                function passesChips(it, chips) {
+                    return (chips || []).every(f =>
+                        fieldText(it, f.field).toLowerCase().includes(String(f.value).toLowerCase()));
+                }
+                function sourceItems() {
+                    if (currentSource.type === 'playlist') {
+                        if (currentSource.kind === 'dynamic') {
+                            return libItems.filter(it => passesChips(it, currentSource.filters));
+                        }
+                        const ids = currentSource.track_ids || [];
+                        return libItems.filter(it => ids.includes(it.youtube_id));
+                    }
+                    return libItems;
+                }
+                function applyFilters(items) {
                     const q = ($('libSearch').value || '').toLowerCase();
-                    const list = $('libList'); list.innerHTML = '';
-                    const items = libItems.filter(it => {
+                    return items.filter(it => {
                         const hay = [it.title, (it.artists || []).join(' '), (it.genres || []).join(' '), it.album]
                             .join(' ').toLowerCase();
-                        return hay.includes(q);
+                        if (q && !hay.includes(q)) return false;
+                        return passesChips(it, libFilters);
                     });
-                    $('libEmpty').style.display = items.length ? 'none' : 'block';
-                    items.forEach(it => {
-                        const row = document.createElement('div');
-                        row.style.cssText = 'display:flex; align-items:center; gap:0.6rem; padding:0.55rem 0.7rem; border:1px solid var(--card-border); border-radius:10px; background:rgba(255,255,255,0.02);';
-                        const meta = document.createElement('div');
-                        meta.style.cssText = 'flex:1; min-width:0;';
+                }
+                function applySort(items) {
+                    const { field, dir } = libSort;
+                    const numeric = (field === 'year' || field === 'duration');
+                    return items.slice().sort((a, b) => {
+                        let va = fieldText(a, field), vb = fieldText(b, field);
+                        if (numeric) return ((parseFloat(va) || 0) - (parseFloat(vb) || 0)) * dir;
+                        return String(va).localeCompare(String(vb)) * dir;
+                    });
+                }
+                function renderChips() {
+                    const c = $('libChips'); c.innerHTML = '';
+                    libFilters.forEach((f, i) => {
+                        const chip = document.createElement('span');
+                        chip.className = 'filter-chip';
+                        const label = document.createElement('span');
+                        label.textContent = `${f.field}: ${f.value}`;
+                        const x = document.createElement('button');
+                        x.type = 'button'; x.textContent = '×';
+                        x.addEventListener('click', () => { libFilters.splice(i, 1); renderLibrary(); });
+                        chip.append(label, x);
+                        c.appendChild(chip);
+                    });
+                }
+
+                function renderLibrary() {
+                    // Refresh the filter-field dropdown (includes custom keys).
+                    const fsel = $('libFilterField');
+                    if (fsel) {
+                        const cur = fsel.value;
+                        fsel.innerHTML = libFieldOptions()
+                            .map(f => `<option value="${f}">${f.charAt(0).toUpperCase() + f.slice(1)}</option>`).join('');
+                        if (cur) fsel.value = cur;
+                    }
+                    renderChips();
+                    visibleItems = applySort(applyFilters(sourceItems()));
+
+                    const list = $('libList'); list.innerHTML = '';
+                    $('libEmpty').style.display = visibleItems.length ? 'none' : 'block';
+                    visibleItems.forEach(it => {
+                        const title = it.title || it.filename || it.youtube_id;
                         const sub = [(it.artists || []).join(', '), (it.genres || []).join(', '), fmtDur(it.duration)]
                             .filter(Boolean).join('  ·  ');
-                        meta.innerHTML = `<div style="font-size:0.85rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${it.title || it.filename || it.youtube_id}</div>
-                            <div style="font-size:0.72rem; opacity:0.6; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${sub}</div>`;
-                        const btns = document.createElement('div');
-                        btns.style.cssText = 'display:flex; gap:0.3rem; flex-shrink:0;';
-                        const mk = (label, fn) => {
-                            const b = document.createElement('button');
-                            b.type = 'button'; b.textContent = label;
-                            b.style.cssText = 'width:auto; padding:0.3rem 0.6rem; font-size:0.72rem; margin:0; background:rgba(255,255,255,0.05); border:1px solid var(--card-border);';
-                            b.onclick = fn; return b;
-                        };
-                        btns.appendChild(mk('Edit', () => openEdit(it.id)));
-                        const del = mk('Delete', () => deleteItem(it.id, it.title || it.filename));
-                        del.style.color = 'var(--primary)';
-                        btns.appendChild(del);
-                        row.appendChild(meta); row.appendChild(btns);
+                        const row = document.createElement('div');
+                        row.className = 'lib-row'; row.dataset.id = it.id;
+
+                        const img = document.createElement('img');
+                        img.className = 'lib-cover'; img.loading = 'lazy'; img.alt = '';
+                        img.onerror = () => { img.onerror = null; img.src = PLACEHOLDER; };
+                        img.src = `/library/${it.id}/cover?v=${encodeURIComponent(it.updated_at || '')}`;
+
+                        const info = document.createElement('div');
+                        info.className = 'lib-info';
+                        const t = document.createElement('div');
+                        t.className = 'lib-ttl'; t.textContent = title; t.title = title;
+                        const s = document.createElement('div');
+                        s.className = 'lib-sub'; s.textContent = sub; s.title = sub;
+                        info.append(t, s);
+
+                        const actions = document.createElement('div');
+                        actions.className = 'lib-actions';
+                        const play = document.createElement('button');
+                        play.type = 'button'; play.className = 'lib-btn lib-play'; play.title = 'Play'; play.dataset.id = it.id;
+                        play.innerHTML = ICON_PLAY;
+                        play.addEventListener('click', e => { e.stopPropagation(); libTogglePlay(it.id); });
+                        const addpl = document.createElement('button');
+                        addpl.type = 'button'; addpl.className = 'lib-btn'; addpl.title = 'Add to playlist';
+                        addpl.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>';
+                        addpl.addEventListener('click', e => { e.stopPropagation(); openPlaylistMenu(e.currentTarget, it.youtube_id); });
+                        const edit = document.createElement('button');
+                        edit.type = 'button'; edit.className = 'lib-btn'; edit.title = 'Edit';
+                        edit.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>';
+                        edit.addEventListener('click', e => { e.stopPropagation(); openEdit(it.id); });
+                        actions.append(play, addpl, edit);
+                        // In a manual playlist, offer remove-from-playlist; elsewhere, delete track.
+                        if (currentSource.type === 'playlist' && currentSource.kind !== 'dynamic') {
+                            const rm = document.createElement('button');
+                            rm.type = 'button'; rm.className = 'lib-btn lib-del'; rm.title = 'Remove from playlist';
+                            rm.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>';
+                            rm.addEventListener('click', e => { e.stopPropagation(); removeFromPlaylist(currentSource.id, it.youtube_id); });
+                            actions.append(rm);
+                        } else {
+                            const del = document.createElement('button');
+                            del.type = 'button'; del.className = 'lib-btn lib-del'; del.title = 'Delete';
+                            del.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
+                            del.addEventListener('click', e => { e.stopPropagation(); deleteItem(it.id, title); });
+                            actions.append(del);
+                        }
+
+                        row.append(img, info, actions);
+                        // Row body click plays (edit is its own button now).
+                        row.addEventListener('click', () => libTogglePlay(it.id));
                         list.appendChild(row);
                     });
+                    updateLibPlayIcons();
+                    renderNowPlaying();
+                    renderSidebar();
+                }
+
+                // ---- Playlists sidebar ----
+                const ICON_ALL = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>';
+                const ICON_PL = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
+
+                async function loadPlaylists() {
+                    try {
+                        const res = await fetch('/playlists');
+                        if (!res.ok) return;
+                        libPlaylists = (await res.json()).items || [];
+                        renderSidebar();
+                    } catch (e) { /* ignore */ }
+                }
+
+                function makeEntry(label, count, active, opts) {
+                    const e = document.createElement('div');
+                    e.className = 'pl-entry' + (active ? ' active' : '');
+                    let thumb;
+                    if (opts.cover) {
+                        thumb = document.createElement('img');
+                        thumb.className = 'pl-thumb'; thumb.alt = '';
+                        thumb.onerror = () => { thumb.removeAttribute('src'); thumb.innerHTML = opts.icon; };
+                        thumb.src = opts.cover;
+                    } else {
+                        thumb = document.createElement('div');
+                        thumb.className = 'pl-thumb'; thumb.innerHTML = opts.icon;
+                    }
+                    const nm = document.createElement('span'); nm.className = 'pl-name'; nm.textContent = label; nm.title = label;
+                    const ct = document.createElement('span'); ct.className = 'pl-count'; ct.textContent = count;
+                    e.append(thumb, nm, ct);
+                    if (opts.onDelete) {
+                        const d = document.createElement('button');
+                        d.className = 'pl-del'; d.type = 'button'; d.textContent = '×'; d.title = 'Delete playlist';
+                        d.addEventListener('click', ev => { ev.stopPropagation(); opts.onDelete(); });
+                        e.append(d);
+                    }
+                    e.addEventListener('click', opts.onClick);
+                    return e;
+                }
+
+                function renderSidebar() {
+                    const list = $('plList'); if (!list) return;
+                    list.innerHTML = '';
+                    list.appendChild(makeEntry('All Tracks', libItems.length, currentSource.type === 'all',
+                        { icon: ICON_ALL, onClick: () => setSource({ type: 'all' }) }));
+                    libPlaylists.forEach(p => {
+                        const count = p.kind === 'dynamic'
+                            ? libItems.filter(it => passesChips(it, p.filters)).length
+                            : p.count;
+                        list.appendChild(makeEntry(p.name, count,
+                            currentSource.type === 'playlist' && currentSource.id === p.id, {
+                            icon: ICON_PL,
+                            cover: p.has_cover ? `/playlists/${p.id}/cover?v=${encodeURIComponent(p.updated_at || '')}` : null,
+                            onClick: () => setSource({ type: 'playlist', id: p.id, kind: p.kind }),
+                            onDelete: () => deletePlaylist(p.id, p.name),
+                        }));
+                    });
+                }
+
+                function setSource(src) {
+                    if (src.type === 'playlist') {
+                        fetch('/playlists/' + src.id).then(r => r.json()).then(pl => {
+                            currentSource = { type: 'playlist', ...pl };
+                            renderLibrary();
+                        }).catch(() => { });
+                    } else {
+                        currentSource = { type: 'all' };
+                        renderLibrary();
+                    }
+                }
+
+                function closePlaylistMenu() { const m = $('plMenu'); if (m) m.remove(); }
+                function openPlaylistMenu(anchor, yid) {
+                    closePlaylistMenu();
+                    const menu = document.createElement('div'); menu.className = 'pl-menu'; menu.id = 'plMenu';
+                    const manual = libPlaylists.filter(p => p.kind !== 'dynamic');
+                    if (!manual.length) {
+                        const b = document.createElement('div');
+                        b.style.cssText = 'padding:0.4rem 0.55rem; font-size:0.76rem; opacity:0.6;';
+                        b.textContent = 'No playlists yet';
+                        menu.appendChild(b);
+                    }
+                    manual.forEach(p => {
+                        const b = document.createElement('button'); b.type = 'button'; b.textContent = p.name;
+                        b.addEventListener('click', () => { addToPlaylist(p.id, yid); closePlaylistMenu(); });
+                        menu.appendChild(b);
+                    });
+                    document.body.appendChild(menu);
+                    const r = anchor.getBoundingClientRect();
+                    menu.style.top = (window.scrollY + r.bottom + 4) + 'px';
+                    menu.style.left = (window.scrollX + Math.min(r.left, window.innerWidth - 180)) + 'px';
+                    setTimeout(() => document.addEventListener('click', closePlaylistMenu, { once: true }), 0);
+                }
+                async function addToPlaylist(pid, yid) {
+                    try {
+                        await fetch(`/playlists/${pid}/tracks`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ youtube_id: yid }),
+                        });
+                        loadPlaylists();
+                    } catch (e) { showError('Add failed'); }
+                }
+                async function removeFromPlaylist(pid, yid) {
+                    try {
+                        await fetch(`/playlists/${pid}/tracks/${encodeURIComponent(yid)}`, { method: 'DELETE' });
+                        const pl = await (await fetch('/playlists/' + pid)).json();
+                        currentSource = { type: 'playlist', ...pl };
+                        loadPlaylists(); renderLibrary();
+                    } catch (e) { showError('Remove failed'); }
+                }
+                async function deletePlaylist(pid, name) {
+                    if (!confirm(`Delete playlist "${name}"? (the tracks themselves are kept)`)) return;
+                    try {
+                        await fetch('/playlists/' + pid, { method: 'DELETE' });
+                        if (currentSource.type === 'playlist' && currentSource.id === pid) currentSource = { type: 'all' };
+                        loadPlaylists(); renderLibrary();
+                    } catch (e) { showError('Delete failed'); }
+                }
+
+                // ---- Create-playlist unit ----
+                function renderPlChips() {
+                    const c = $('plChips'); c.innerHTML = '';
+                    createFilters.forEach((f, i) => {
+                        const chip = document.createElement('span'); chip.className = 'filter-chip';
+                        const label = document.createElement('span'); label.textContent = `${f.field}: ${f.value}`;
+                        const x = document.createElement('button'); x.type = 'button'; x.textContent = '×';
+                        x.addEventListener('click', () => { createFilters.splice(i, 1); renderPlChips(); });
+                        chip.append(label, x); c.appendChild(chip);
+                    });
+                }
+                function openCreate() {
+                    createFilters = []; createKind = 'manual'; createCoverBase64 = null;
+                    $('plName').value = '';
+                    $('plKindManual').classList.add('active'); $('plKindDynamic').classList.remove('active');
+                    $('plDynBuilder').style.display = 'none';
+                    $('plCoverBtn').textContent = 'Cover image (optional)';
+                    $('plFilterField').innerHTML = libFieldOptions()
+                        .map(f => `<option value="${f}">${f.charAt(0).toUpperCase() + f.slice(1)}</option>`).join('');
+                    renderPlChips();
+                    $('plCreate').style.display = 'flex';
+                }
+                async function saveCreate() {
+                    const name = $('plName').value.trim();
+                    if (!name) { showError('Name the playlist'); return; }
+                    const body = { name, kind: createKind, filters: createKind === 'dynamic' ? createFilters : [] };
+                    if (createCoverBase64) body.cover_base64 = createCoverBase64;
+                    try {
+                        const res = await fetch('/playlists', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body),
+                        });
+                        if (!res.ok) { showError('Create failed: ' + (await res.text())); return; }
+                        const pl = await res.json();
+                        $('plCreate').style.display = 'none';
+                        await loadPlaylists();
+                        setSource({ type: 'playlist', id: pl.id });
+                    } catch (e) { showError(e.message); }
                 }
 
                 function cloneOptions(srcId, withNone) {
@@ -2893,7 +3953,7 @@
 
                 function buildFxControls(eff) {
                     eff = eff || {};
-                    const sel = (id, opts, val) =>
+                    const sel = (id, opts) =>
                         `<label style="font-size:0.7rem; opacity:0.7;">${opts.label}</label>
                          <select id="${id}" class="styled-select-mini" style="width:100%;">${opts.html}</select>`;
                     $('libFxControls').innerHTML =
@@ -2922,24 +3982,36 @@
                         const res = await fetch('/library/' + id);
                         if (!res.ok) { showError('Track not found'); return; }
                         const d = await res.json();
-                        editing = { id, hasOriginal: true };
+                        editing = { id };
                         $('libEditTitle').textContent = d.title || d.filename || 'Edit';
                         $('libTitle').value = d.title || '';
                         $('libArtists').value = (d.artists || []).join(', ');
                         $('libGenres').value = (d.genres || []).join(', ');
                         $('libAlbum').value = d.album || '';
                         $('libYear').value = d.year || '';
-                        $('libComposer').value = (d.custom_fields && (d.custom_fields.Composer || d.custom_fields.composer)) || '';
+                        const cf = d.custom_fields || {};
+                        $('libComposer').value = cf.Composer || cf.composer || '';
+                        // Arbitrary custom tags (everything except the composer we surface above).
+                        const cont = $('libCustomTags'); cont.innerHTML = '';
+                        Object.keys(cf).forEach(k => {
+                            if (k.toLowerCase() === 'composer') return;
+                            addCustomTag(cont, k, cf[k]);
+                        });
+                        // Cover
+                        libEditCoverBase64 = null;
+                        libEditResetUrl = `/library/${id}/cover?v=${encodeURIComponent(d.updated_at || '')}`;
+                        const im = $('libEditThumb');
+                        im.onerror = () => { im.onerror = null; im.src = PLACEHOLDER; };
+                        im.src = libEditResetUrl;
+
                         buildFxControls(d.effects);
-                        // original_rel lives in the sidecar; the reprocess endpoint
-                        // 409s if missing, so we just surface the error on click.
                         showMetaPane();
-                        editModal.style.display = 'block';
+                        showView('libEdit');
                     } catch (e) { showError(e.message); }
                 }
 
                 function showMetaPane() {
-                    $('libPaneMeta').style.display = 'flex';
+                    $('libPaneMeta').style.display = 'grid';
                     $('libPaneFx').style.display = 'none';
                     $('libTabMeta').style.background = 'var(--primary)';
                     $('libTabFx').style.background = 'rgba(255,255,255,0.05)';
@@ -2956,7 +4028,8 @@
                 async function saveMeta() {
                     if (!editing) return;
                     const composer = $('libComposer').value.trim();
-                    const custom_tags = composer ? [{ key: 'Composer', value: composer }] : [];
+                    const custom = getCustomTags($('libCustomTags')).filter(t => t.key.toLowerCase() !== 'composer');
+                    const custom_tags = (composer ? [{ key: 'Composer', value: composer }] : []).concat(custom);
                     const body = {
                         title: $('libTitle').value.trim(),
                         artists: splitCsv($('libArtists').value),
@@ -2966,15 +4039,19 @@
                         custom_tags,
                         delimiter: '|',
                     };
+                    if (libEditCoverBase64) body.thumbnail_base64 = libEditCoverBase64;
+                    const btn = $('libSaveMeta');
+                    btn.disabled = true; btn.textContent = 'Saving…';
                     try {
                         const res = await fetch('/library/' + editing.id, {
                             method: 'PATCH', headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(body),
                         });
                         if (!res.ok) { showError('Save failed: ' + (await res.text())); return; }
-                        editModal.style.display = 'none';
-                        loadLibrary();
+                        await loadLibrary();
+                        showView('library');
                     } catch (e) { showError(e.message); }
+                    finally { btn.disabled = false; btn.textContent = 'Save metadata'; }
                 }
 
                 async function reprocess() {
@@ -2997,8 +4074,8 @@
                             body: JSON.stringify(body),
                         });
                         if (!res.ok) { showError('Reprocess failed: ' + (await res.text())); return; }
-                        editModal.style.display = 'none';
-                        loadLibrary();
+                        await loadLibrary();
+                        showView('library');
                     } catch (e) { showError(e.message); }
                     finally { btn.disabled = false; btn.textContent = 'Rebuild file with these effects'; }
                 }
@@ -3012,26 +4089,100 @@
                     } catch (e) { showError(e.message); }
                 }
 
-                // Wiring
-                $('libraryBtn').addEventListener('click', () => { modal.style.display = 'block'; loadLibrary(); });
-                $('libCloseBtn').addEventListener('click', () => modal.style.display = 'none');
+                // Cover uploader for the edit view (reuses the shared resizer).
+                wireCover($('libThumbUpload'), $('libEditThumb'), $('libUploadThumbBtn'), $('libResetThumbBtn'),
+                    b64 => { libEditCoverBase64 = b64; }, () => libEditResetUrl);
+
+                // Wiring (view navigation)
+                $('navDownload').addEventListener('click', () => showView('download'));
+                $('navLibrary').addEventListener('click', () => { showView('library'); currentSource = { type: 'all' }; loadLibrary(); loadPlaylists(); });
+                $('brandHome').addEventListener('click', () => showView('download'));
+
+                // Playlist create unit
+                $('plNewBtn').addEventListener('click', openCreate);
+                $('plCreateCancel').addEventListener('click', () => { $('plCreate').style.display = 'none'; });
+                $('plCreateSave').addEventListener('click', saveCreate);
+                $('plKindManual').addEventListener('click', () => {
+                    createKind = 'manual';
+                    $('plKindManual').classList.add('active'); $('plKindDynamic').classList.remove('active');
+                    $('plDynBuilder').style.display = 'none';
+                });
+                $('plKindDynamic').addEventListener('click', () => {
+                    createKind = 'dynamic';
+                    $('plKindDynamic').classList.add('active'); $('plKindManual').classList.remove('active');
+                    $('plDynBuilder').style.display = 'block';
+                });
+                $('plAddFilter').addEventListener('click', () => {
+                    const field = $('plFilterField').value, value = $('plFilterValue').value.trim();
+                    if (!field || !value) return;
+                    createFilters.push({ field, value }); $('plFilterValue').value = ''; renderPlChips();
+                });
+                $('plFilterValue').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('plAddFilter').click(); } });
+                $('plCoverBtn').addEventListener('click', () => $('plCoverUpload').click());
+                $('plCoverUpload').addEventListener('change', e => {
+                    const f = e.target.files[0]; if (!f) return;
+                    const rd = new FileReader();
+                    rd.onload = ev => {
+                        const im = new Image();
+                        im.onload = () => {
+                            const MAX = 600; let { width: w, height: h } = im;
+                            const sc = Math.min(1, MAX / Math.max(w, h)); w = Math.round(w * sc); h = Math.round(h * sc);
+                            const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+                            const cx = cv.getContext('2d'); cx.fillStyle = '#000'; cx.fillRect(0, 0, w, h); cx.drawImage(im, 0, 0, w, h);
+                            createCoverBase64 = cv.toDataURL('image/jpeg', 0.85).split(',')[1];
+                            $('plCoverBtn').textContent = 'Cover ✓';
+                        };
+                        im.onerror = () => showError('Could not read that image');
+                        im.src = ev.target.result;
+                    };
+                    rd.readAsDataURL(f);
+                });
+                $('libBackBtn').addEventListener('click', () => showView('download'));
+                $('libEditBackBtn').addEventListener('click', () => showView('library'));
                 $('libRefreshBtn').addEventListener('click', async () => {
                     try { await fetch('/library/rebuild', { method: 'POST' }); } catch (e) {}
                     loadLibrary();
                 });
                 $('libSearch').addEventListener('input', renderLibrary);
-                $('libEditCloseBtn').addEventListener('click', () => editModal.style.display = 'none');
+
+                // Filter / sort controls
+                $('libSortField').addEventListener('change', () => { libSort.field = $('libSortField').value; renderLibrary(); });
+                $('libSortDir').addEventListener('click', () => {
+                    libSort.dir *= -1;
+                    $('libSortDir').textContent = libSort.dir < 0 ? '↓' : '↑';
+                    renderLibrary();
+                });
+                $('libAddFilter').addEventListener('click', () => {
+                    const field = $('libFilterField').value;
+                    const value = $('libFilterValue').value.trim();
+                    if (!field || !value) return;
+                    libFilters.push({ field, value });
+                    $('libFilterValue').value = '';
+                    renderLibrary();
+                });
+                $('libFilterValue').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('libAddFilter').click(); } });
+
+                // Now-playing controls
+                $('npPlay').addEventListener('click', () => {
+                    if (libPlayingId == null) { if (visibleItems[0]) playById(visibleItems[0].id); return; }
+                    if (libAudio.paused) libAudio.play().catch(() => {}); else libAudio.pause();
+                });
+                $('npPrev').addEventListener('click', () => stepTrack(-1));
+                $('npNext').addEventListener('click', () => stepTrack(1));
+                $('npSeek').addEventListener('input', () => {
+                    if (libAudio.duration) libAudio.currentTime = ($('npSeek').value / 1000) * libAudio.duration;
+                });
+
                 $('libTabMeta').addEventListener('click', showMetaPane);
                 $('libTabFx').addEventListener('click', showFxPane);
+                $('libAddTagBtn').addEventListener('click', () => addCustomTag($('libCustomTags')));
                 $('libSaveMeta').addEventListener('click', saveMeta);
                 $('libReprocess').addEventListener('click', reprocess);
-                modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
-                editModal.addEventListener('click', e => { if (e.target === editModal) editModal.style.display = 'none'; });
 
-                // Reveal the Library button only in server-save mode.
+                // Reveal the Library nav only in server-save mode.
                 fetch('/config').then(r => r.json()).then(cfg => {
                     if (cfg && cfg.browser_download_mode === false) {
-                        $('libraryBtn').style.display = 'flex';
+                        $('navLibrary').style.display = '';
                     }
                 }).catch(() => {});
             })();

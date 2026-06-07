@@ -378,6 +378,40 @@ def get_video_info(url: str) -> dict:
         raise RuntimeError(f"Failed to extract video info: {str(e)}")
 
 
+def search_youtube(query: str, limit: int = 10) -> list:
+    """
+    Search YouTube for a free-text query and return up to `limit` lightweight
+    results (flat extraction — no per-video network calls, so it's fast).
+    """
+    opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'extract_flat': True,
+        'skip_download': True,
+        'noplaylist': True,
+    }
+    results = []
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(f"ytsearch{int(limit)}:{query}", download=False)
+        for e in (info.get('entries') or []):
+            if not e:
+                continue
+            vid = e.get('id')
+            if not vid:
+                continue
+            thumbs = e.get('thumbnails') or []
+            thumb = thumbs[-1].get('url') if thumbs else f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
+            results.append({
+                'video_id': vid,
+                'url': f"https://www.youtube.com/watch?v={vid}",
+                'title': e.get('title'),
+                'author': e.get('uploader') or e.get('channel'),
+                'duration': e.get('duration'),
+                'thumbnail': thumb,
+            })
+    return results
+
+
 def download_youtube_audio(
     url: str,
     output_dir: str = ".",
@@ -753,6 +787,18 @@ def find_original(originals_dir: str, video_id: str) -> Optional[str]:
     for f in glob.glob(os.path.join(originals_dir, f"{video_id}.*")):
         if os.path.exists(f):
             return f
+    return None
+
+
+def read_cover(mp3_path: str):
+    """Return (bytes, mime) of the embedded front cover, or None."""
+    try:
+        from mutagen.id3 import ID3
+        apics = ID3(mp3_path).getall('APIC')
+        if apics:
+            return apics[0].data, (apics[0].mime or 'image/jpeg')
+    except Exception:
+        pass
     return None
 
 
