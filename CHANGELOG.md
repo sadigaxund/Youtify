@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Releases are cut by pushing a `vX.Y.Z` git tag, which builds and publishes the
 Docker image (`sakhund/youtify:<version>` + `:latest`).
 
+## [2.2.0] - 2026-06-07
+
+### Added
+- **Music-library app shell.** A persistent top bar (Download / Library) with
+  full-width, capped (~1200px) pages — the floating card/modal layout is gone.
+- **Now-playing panel** in the library: cover, marquee title/artist, seek bar,
+  play/pause, and prev/next that step through the current filtered list.
+- **Filter & sort.** Field=value filter chips (AND-combined, across any metadata
+  incl. custom tags) plus a sort selector (field + direction), on top of the
+  existing full-text search.
+- **Playlists** (left sidebar): "All Tracks" plus manual and **dynamic**
+  (filter-defined) playlists, an inline create unit (name, optional cover,
+  Manual/Dynamic, filter builder), per-track add/remove, and delete. Persisted as
+  JSON sidecars under `.youtify/playlists/` (DB-indexed, rebuilt on startup).
+  Endpoints: `GET/POST /playlists`, `GET/PATCH/DELETE /playlists/{id}`,
+  `POST/DELETE /playlists/{id}/tracks`, `GET /playlists/{id}/cover`.
+- **In-library playback** — `GET /library/{id}/audio`; play any saved track.
+- **Per-track cover endpoint** `GET /library/{id}/cover`; inline covers in lists.
+- **Full metadata editing** in the library: all standard fields plus arbitrary
+  custom tags and cover, on a dedicated edit page.
+- **Search by query** — non-URL input on the download view searches YouTube
+  (`GET /yt-search`) and shows up to 10 pickable results.
+- **Preview-cache cleanup** — `POST /preview-cache/clear`; a session's preview
+  "mix" renders are dropped on page unload.
+
+### Changed
+- Library editing moved from modals to **in-page views** with back navigation.
+- "A/B Compare" renamed to **Mixes**; history cap raised to 12.
+- **Preview player rewritten to a single, reliable `<audio>` element**, replacing
+  the dual-element crossfade: switching effects/mixes always applies and resumes
+  the current position (brief load gap on a combo's first render).
+- `GET /library` now returns `custom_fields` for client-side filter/sort.
+- Cover controls are an always-visible 2-column **Upload / Reset** row.
+- Removed the PayPal donation footer. App version bumped to 2.2.0.
+
+### Fixed
+- Effect/mix switches no longer randomly reset playback or fail to apply.
+- `416 Range Not Satisfiable` on combo switch — the resume seek is now clamped
+  inside the file and only after duration is known.
+- Double audio when moving between Download and Library — the other tab's player
+  is paused on switch.
+- Library list rendered as one giant cover — now a proper row list.
+- Filter row layout/sizing cleaned up; dynamic playlist counts compute live.
+
 ## [2.1.0] - 2026-06-06
 
 ### Added
@@ -67,6 +111,7 @@ Docker image (`sakhund/youtify:<version>` + `:latest`).
   normalization, enhancement modes, range select, live seekable preview, and
   ID3 + cover-art metadata embedding.
 
-[Unreleased]: https://github.com/sakhund/youtify/compare/v2.0.0...HEAD
+[2.2.0]: https://github.com/sakhund/youtify/compare/v2.1.0...v2.2.0
+[2.1.0]: https://github.com/sakhund/youtify/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/sakhund/youtify/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/sakhund/youtify/releases/tag/v1.0.0

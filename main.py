@@ -6,6 +6,7 @@ import threading
 import datetime
 import traceback
 import logging
+import base64
 from typing import Optional, Dict
 
 logging.basicConfig(
@@ -45,7 +46,7 @@ def print_startup_banner(*, mode, save_dir, originals_dir, cache_root, host_url,
     if warning:
         log.warning(warning)
 
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Body
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Body, Response
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -57,7 +58,7 @@ import sqlite3
 from youtube_downloader import (
     validate_youtube_url, download_youtube_audio, get_video_info,
     archive_original, retag_mp3_in_place, reprocess_from_original,
-    find_original, get_audio_duration,
+    find_original, get_audio_duration, read_cover, normalize_cover,
 )
 
 # Import the database module
@@ -73,7 +74,8 @@ async def lifespan(app: FastAPI):
     if not BROWSER_DOWNLOAD_MODE:
         try:
             n = db.rebuild_from_sidecars(META_DIR, DOWNLOAD_DIR)
-            log.info("Library index: %d track(s) loaded from sidecars.", n)
+            p = db.rebuild_playlists_from_sidecars(PLAYLISTS_DIR)
+            log.info("Library index: %d track(s), %d playlist(s) loaded from sidecars.", n, p)
         except Exception as e:
             log.warning("Startup library rebuild failed: %s", e)
     yield
@@ -82,7 +84,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Youtify",
     description="High-quality YouTube Audio Downloader",
-    version="2.1.0",
+    version="2.2.0",
     lifespan=lifespan,
 )
 
@@ -133,6 +135,7 @@ BROWSER_DOWNLOAD_MODE = ENV_SAVE_DIR is None
 DOWNLOAD_DIR = None
 ORIGINALS_DIR = None
 META_DIR = None
+PLAYLISTS_DIR = None
 _startup_warning = None
 
 if not BROWSER_DOWNLOAD_MODE:
@@ -152,8 +155,10 @@ if not BROWSER_DOWNLOAD_MODE:
     # per-track JSON sidecars that can rebuild the DB if it's lost.
     ORIGINALS_DIR = os.path.join(DOWNLOAD_DIR, ".youtify", "originals")
     META_DIR = os.path.join(DOWNLOAD_DIR, ".youtify", "meta")
+    PLAYLISTS_DIR = os.path.join(DOWNLOAD_DIR, ".youtify", "playlists")
     os.makedirs(ORIGINALS_DIR, exist_ok=True)
     os.makedirs(META_DIR, exist_ok=True)
+    os.makedirs(PLAYLISTS_DIR, exist_ok=True)
 
 # Create static directory if it doesn't exist
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
@@ -269,6 +274,34 @@ def read_sidecar(video_id: str) -> Optional[dict]:
         return None
 
 
+def playlist_sidecar_path(pid: str) -> str:
+    return os.path.join(PLAYLISTS_DIR, f"{pid}.json")
+
+
+def playlist_cover_path(pid: str) -> str:
+    return os.path.join(PLAYLISTS_DIR, f"{pid}.jpg")
+
+
+def write_playlist_sidecar(pid: str, data: dict):
+    path = playlist_sidecar_path(pid)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+def read_playlist_sidecar(pid: str) -> Optional[dict]:
+    path = playlist_sidecar_path(pid)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception as e:
+        log.warning("Failed to read playlist sidecar %s: %s", path, e)
+        return None
+
+
 def precache_with_progress(url: str):
     """
     Background task launched by /search: downloads bestaudio into the cache
@@ -322,6 +355,16 @@ def video_info(url: str = Query(..., description="The YouTube URL")):
         return info
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/yt-search")
+def yt_search(q: str = Query(..., description="Free-text search query")):
+    """Search YouTube and return up to 10 pickable results (for non-URL input)."""
+    from youtube_downloader import search_youtube
+    try:
+        return {"results": search_youtube(q, 10)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 @app.get("/progress/{session_id}")
 async def get_progress(session_id: str):
@@ -961,6 +1004,193 @@ def library_delete(audio_id: int, purge_original: bool = Query(False)):
             except Exception as e:
                 log.warning("Failed to delete original %s: %s", orig, e)
     return {"deleted": True}
+
+
+@app.get("/library/{audio_id}/cover")
+def library_cover(audio_id: int):
+    """Serve a track's embedded front cover (for the library list/editor)."""
+    _require_library()
+    detail = db.get_audio_detail(audio_id)
+    if not detail or not detail.get("rel_path"):
+        raise HTTPException(status_code=404, detail="Track not found")
+    cover = read_cover(_abs(detail["rel_path"]))
+    if not cover:
+        raise HTTPException(status_code=404, detail="No cover")
+    data, mime = cover
+    return Response(content=data, media_type=mime,
+                    headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/library/{audio_id}/audio")
+def library_audio(audio_id: int):
+    """Stream a saved track's MP3 for in-library playback (seekable)."""
+    _require_library()
+    detail = db.get_audio_detail(audio_id)
+    if not detail or not detail.get("rel_path"):
+        raise HTTPException(status_code=404, detail="Track not found")
+    path = _abs(detail["rel_path"])
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="File missing")
+    return FileResponse(path, media_type="audio/mpeg")
+
+
+@app.post("/preview-cache/clear")
+def clear_preview_cache(url: Optional[str] = Query(None)):
+    """
+    Drop cached preview renders (the per-effect 'mix' MP3s). Called on unload so
+    a session's experiments don't linger on the SSD. With ?url=, clears just that
+    video's mixes; otherwise clears all. The source cache is left intact.
+    """
+    import glob
+    removed = 0
+    try:
+        if url:
+            try:
+                vid = validate_youtube_url(url)
+            except Exception:
+                return {"removed": 0}
+            pattern = os.path.join(CACHE_DIR, f"prev_{vid}_*.mp3")
+        else:
+            pattern = os.path.join(CACHE_DIR, "prev_*.mp3")
+        for f in glob.glob(pattern):
+            try:
+                os.remove(f)
+                removed += 1
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return {"removed": removed}
+
+
+# ---------------------------------------------------------------------------
+# Playlists (save-dir mode). Definitions persist as JSON sidecars under
+# .youtify/playlists/ so they survive a DB rebuild; the DB is just the index.
+# ---------------------------------------------------------------------------
+
+def _save_playlist(pid, *, name, kind, filters, sort, track_ids, has_cover):
+    """Write the sidecar + upsert the DB index together."""
+    data = {
+        "id": pid, "name": name, "kind": kind,
+        "filters": filters or [], "sort": sort or {},
+        "track_ids": track_ids or [], "has_cover": bool(has_cover),
+        "updated_at": datetime.datetime.now().isoformat(),
+    }
+    write_playlist_sidecar(pid, data)
+    db.upsert_playlist(id=pid, name=name, kind=kind, filters=filters, sort=sort,
+                       has_cover=has_cover, track_ids=track_ids)
+    return data
+
+
+@app.get("/playlists")
+def playlists_list():
+    _require_library()
+    return {"items": db.list_playlists()}
+
+
+@app.get("/playlists/{pid}")
+def playlist_detail(pid: str):
+    _require_library()
+    pl = db.get_playlist(pid)
+    if not pl:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    return pl
+
+
+@app.post("/playlists")
+def playlist_create(payload: dict = Body(...)):
+    _require_library()
+    pid = uuid.uuid4().hex[:12]
+    name = (payload.get("name") or "Untitled").strip() or "Untitled"
+    kind = "dynamic" if payload.get("kind") == "dynamic" else "manual"
+    filters = payload.get("filters") or []
+    sort = payload.get("sort") or {}
+    has_cover = False
+    if payload.get("cover_base64"):
+        try:
+            data, _ = normalize_cover(base64.b64decode(payload["cover_base64"]), max_side=600)
+            if data:
+                with open(playlist_cover_path(pid), "wb") as fh:
+                    fh.write(data)
+                has_cover = True
+        except Exception as e:
+            log.warning("playlist cover save failed: %s", e)
+    return _save_playlist(pid, name=name, kind=kind, filters=filters, sort=sort,
+                          track_ids=[], has_cover=has_cover)
+
+
+@app.patch("/playlists/{pid}")
+def playlist_update(pid: str, payload: dict = Body(...)):
+    _require_library()
+    pl = db.get_playlist(pid)
+    if not pl:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    name = (payload.get("name") if payload.get("name") is not None else pl["name"]).strip() or pl["name"]
+    kind = payload.get("kind") or pl["kind"]
+    filters = payload.get("filters") if payload.get("filters") is not None else pl["filters"]
+    sort = payload.get("sort") if payload.get("sort") is not None else pl["sort"]
+    has_cover = pl["has_cover"]
+    if payload.get("cover_base64"):
+        try:
+            data, _ = normalize_cover(base64.b64decode(payload["cover_base64"]), max_side=600)
+            if data:
+                with open(playlist_cover_path(pid), "wb") as fh:
+                    fh.write(data)
+                has_cover = True
+        except Exception as e:
+            log.warning("playlist cover save failed: %s", e)
+    return _save_playlist(pid, name=name, kind=kind, filters=filters, sort=sort,
+                          track_ids=pl["track_ids"], has_cover=has_cover)
+
+
+@app.delete("/playlists/{pid}")
+def playlist_delete(pid: str):
+    _require_library()
+    if not db.delete_playlist(pid):
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    for p in (playlist_sidecar_path(pid), playlist_cover_path(pid)):
+        try:
+            if os.path.exists(p):
+                os.remove(p)
+        except Exception as e:
+            log.warning("Failed to delete %s: %s", p, e)
+    return {"deleted": True}
+
+
+@app.post("/playlists/{pid}/tracks")
+def playlist_add_track(pid: str, payload: dict = Body(...)):
+    _require_library()
+    pl = db.get_playlist(pid)
+    if not pl:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    yid = payload.get("youtube_id")
+    if not yid:
+        raise HTTPException(status_code=422, detail="youtube_id required")
+    ids = pl["track_ids"]
+    if yid not in ids:
+        ids.append(yid)
+    return _save_playlist(pid, name=pl["name"], kind=pl["kind"], filters=pl["filters"],
+                          sort=pl["sort"], track_ids=ids, has_cover=pl["has_cover"])
+
+
+@app.delete("/playlists/{pid}/tracks/{youtube_id}")
+def playlist_remove_track(pid: str, youtube_id: str):
+    _require_library()
+    pl = db.get_playlist(pid)
+    if not pl:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    ids = [x for x in pl["track_ids"] if x != youtube_id]
+    return _save_playlist(pid, name=pl["name"], kind=pl["kind"], filters=pl["filters"],
+                          sort=pl["sort"], track_ids=ids, has_cover=pl["has_cover"])
+
+
+@app.get("/playlists/{pid}/cover")
+def playlist_cover(pid: str):
+    _require_library()
+    path = playlist_cover_path(pid)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="No cover")
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/suggestions")
