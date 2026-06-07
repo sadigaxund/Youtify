@@ -9,11 +9,16 @@ import logging
 import base64
 from typing import Optional, Dict
 
-logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO").upper(),
-    format="%(asctime)s │ %(levelname)-7s │ %(message)s",
-    datefmt="%H:%M:%S",
-)
+# Match uvicorn's log line style AND colors so app + server logs are uniform
+# (e.g. a green "INFO:     Library index: ...").
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
+try:
+    from uvicorn.logging import DefaultFormatter
+    for _h in logging.getLogger().handlers:
+        _h.setFormatter(DefaultFormatter("%(levelprefix)s %(message)s"))
+except Exception:
+    for _h in logging.getLogger().handlers:
+        _h.setFormatter(logging.Formatter("%(levelname)s:     %(message)s"))
 log = logging.getLogger("youtify")
 
 YOUTIFY_BANNER = r"""
@@ -27,7 +32,13 @@ YOUTIFY_BANNER = r"""
 
 
 def print_startup_banner(*, mode, save_dir, originals_dir, cache_root, host_url, warning=None):
-    """One-time startup banner: ASCII logo + a tidy config summary."""
+    """One-time startup banner: ASCII logo + a colorized config summary."""
+    import sys
+    if sys.stdout.isatty():
+        MAG, DIM, CYAN, WHITE, RST = (
+            "\033[38;5;205m", "\033[2m", "\033[36m", "\033[97m", "\033[0m")
+    else:
+        MAG = DIM = CYAN = WHITE = RST = ""
     rows = [
         ("Mode", mode),
         ("Save dir", save_dir or "— (temporary, streamed to browser)"),
@@ -36,13 +47,17 @@ def print_startup_banner(*, mode, save_dir, originals_dir, cache_root, host_url,
         ("Listening", host_url),
     ]
     label_w = max(len(l) for l, _ in rows)
-    cells = [f"  {l.ljust(label_w)}   {v}" for l, v in rows]
-    inner = max(len(c) for c in cells) + 2
-    print(f"\033[38;5;205m{YOUTIFY_BANNER}\033[0m")
-    print("┌" + "─" * inner + "┐")
-    for c in cells:
-        print("│" + c.ljust(inner) + "│")
-    print("└" + "─" * inner + "┘")
+    # Widths computed on plain text (ANSI codes are zero-width on screen).
+    plain = [f"  {l.ljust(label_w)}   {v}" for l, v in rows]
+    inner = max(len(p) for p in plain) + 2
+    bar = "─" * inner
+
+    print(f"{MAG}{YOUTIFY_BANNER}{RST}")
+    print(f"{DIM}┌{bar}┐{RST}")
+    for (label, value), p in zip(rows, plain):
+        pad = " " * (inner - len(p))
+        print(f"{DIM}│{RST}  {CYAN}{label.ljust(label_w)}{RST}   {WHITE}{value}{RST}{pad}{DIM}│{RST}")
+    print(f"{DIM}└{bar}┘{RST}")
     if warning:
         log.warning(warning)
 
