@@ -111,6 +111,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Static file directory
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+os.makedirs(STATIC_DIR, exist_ok=True)
+
+# Serve static files (CSS, JS, assets)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
 # Store progress in-memory (simple session-based)
 # In a production app, use Redis or similar
 #   download_progress: keyed by session_id, tracks the /save job (cache + process phases)
@@ -180,9 +187,7 @@ if not BROWSER_DOWNLOAD_MODE:
     os.makedirs(META_DIR, exist_ok=True)
     os.makedirs(PLAYLISTS_DIR, exist_ok=True)
 
-# Create static directory if it doesn't exist
-STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
-os.makedirs(STATIC_DIR, exist_ok=True)
+
 
 print_startup_banner(
     mode="Server Save" if not BROWSER_DOWNLOAD_MODE else "Browser Download (temporary)",
