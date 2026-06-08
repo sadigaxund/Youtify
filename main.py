@@ -559,6 +559,7 @@ def save_audio(
     url: Optional[str] = Query(None, description="The YouTube URL to download audio from (or use source_id)"),
     source_id: Optional[str] = Query(None, description="Id of an already-cached source (e.g. an upload) — use instead of url"),
     output_format: str = Query("auto", description="Export format: auto|mp3|flac|wav"),
+    custom_filename: Optional[str] = Query(None, description="Override the auto-generated filename (no extension)"),
     start_time: Optional[float] = Query(None, description="Start time in seconds"),
     end_time: Optional[float] = Query(None, description="End time in seconds"),
     trim_silence: bool = Query(True, description="Trim leading/trailing silence"),
@@ -624,11 +625,15 @@ def save_audio(
              if t.get('key', '').lower() == 'composer'), None)
         composer = meta_composer or composer_from_json
 
-        # 4. Build filename "Title (Album) - Artist (Composer).<fmt>"
-        title_for_name = meta_title
-        if not title_for_name:
-            title_for_name = get_video_info(url).get('title', video_id) if not is_upload else video_id
-        filename_to_use = build_filename(title_for_name, meta_album, meta_artist, composer, delimiter, ext=out_fmt)
+        # 4. Build filename "Title (Album) - Artist (Composer).<fmt>", or use the
+        #    user's custom override (sanitized; extension still from the format).
+        if custom_filename and custom_filename.strip():
+            filename_to_use = (sanitize(custom_filename) or "audio") + "." + out_fmt
+        else:
+            title_for_name = meta_title
+            if not title_for_name:
+                title_for_name = get_video_info(url).get('title', video_id) if not is_upload else video_id
+            filename_to_use = build_filename(title_for_name, meta_album, meta_artist, composer, delimiter, ext=out_fmt)
 
         # 5. Determine output directory based on mode
         if BROWSER_DOWNLOAD_MODE:

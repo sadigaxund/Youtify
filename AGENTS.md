@@ -15,11 +15,11 @@ All JS is **global-scope, no modules** — loaded via `<script>` tags in order. 
 | `app.js` | State vars, `els` DOM references, utils (`setLoading`, `showError`, `showToast`) |
 | `pipeline.js` | Download progress steps, process flow |
 | `thumbnail.js` | Cover uploader (`wireCover`) |
-| `metadata.js` | Tags, genre/artist multi-select, autocomplete, filename preview |
+| `metadata.js` | Tags, multi-value chip inputs (artist/genre/composer/custom), autocomplete, Output & technical panel (format flow, tag separator, custom filename) |
 | `search.js` | YouTube search, file upload, `onSourceReady` |
 | `mixer.js` | A/B compare snapshots, batch combo generator |
 | `preview.js` | Range slider, audio player, OS media session, `onEffectChange` |
-| `library.js` | Library view, playlists, filter/sort (IIFE-wrapped) |
+| `library.js` | Library view, playlists, filter/sort, Browse-by facet grid + hero (IIFE-wrapped) |
 
 **Key patterns:**
 - `els.xxx` = cached `document.getElementById('xxx')`

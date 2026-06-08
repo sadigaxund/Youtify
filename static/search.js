@@ -116,6 +116,9 @@
                 const isUpload = !!(opts.isUpload || data.is_upload);
                 currentVideoId = data.video_id;
                 currentSourceId = isUpload ? data.video_id : null;
+                // Source format + losslessness drive the Output panel + Auto export.
+                currentSourceLossless = !!data.lossless;
+                currentSrcLabel = isUpload ? String(data.src_ext || 'file').toUpperCase() : 'YouTube';
 
                 originalThumbnailUrl = data.thumbnail || '';
                 els.metaThumb.src = data.thumbnail || '';
@@ -144,11 +147,21 @@
                 els.preview.style.display = 'flex';
                 els.optionsPanel.style.display = 'grid';
                 document.getElementById('actionBar').style.display = 'flex';
+                if (els.techPanel) els.techPanel.style.display = 'block';
                 els.searchBtn.style.display = 'none';
                 els.inputGroup.style.display = 'none';
                 if (els.dropZone) els.dropZone.style.display = 'none';
 
+                // Reset custom-filename override per source.
+                if (els.filenameCustomToggle) {
+                    els.filenameCustomToggle.checked = false; els.filenameCustom.value = '';
+                    els.filenameCustom.style.display = 'none'; els.filenamePreview.style.display = 'block';
+                    if (els.filenameEditBtn) els.filenameEditBtn.style.display = '';
+                    if (els.filenameAutoBtn) els.filenameAutoBtn.style.display = 'none';
+                }
+
                 initRangeSlider(data.duration);
+                updateFmtFlow();
                 updateFilenamePreview();
                 updateSilenceVisualization();
 

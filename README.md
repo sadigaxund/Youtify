@@ -62,8 +62,9 @@
 
 ### Metadata
 - Auto-fetches cover art, title, artist, and year from the video.
-- Multi-artist / multi-genre tagging with autocomplete that **remembers what you've typed** — locally in the browser, and (in Server Save mode) from everything already in your library.
-- Custom ID3 tags, cover-art upload, and a configurable delimiter for multiple artists/genres (e.g. `,`, `|`, `;`).
+- Multi-value tagging via chips (type + Enter) for **Artist, Genre, Composer, and any custom tag** — each value is its own chip with individual autocomplete drawn from your library.
+- Custom tags, cover-art upload, and a configurable delimiter for multi-value fields (e.g. `,`, `|`, `;`).
+- **Output & technical** panel: pick the export format (with a `source → target` preview), toggle Turbo Render, set the tag separator, and optionally type a **custom filename**.
 - Cover art is **standardized server-side** (JPEG, aspect kept, capped ~1000px) for consistent display in players like Jellyfin.
 
 ### Library (Server Save mode)
@@ -71,6 +72,7 @@
 - **Built-in player** — a now-playing panel with cover, seek bar, and prev/next that step through the current filtered list.
 - **OS media integration** — the playing track's title/artist/album + cover art publish to the OS, so it shows in Linux desktop media widgets (MPRIS) and mobile lock-screen/notification controls, with working play/pause/next/previous/seek. (Full controls on Android need an HTTPS origin.)
 - **Playlists** — manual or **dynamic** (filter-defined) playlists in a sidebar, drag-to-reorder, with cover art. Stored as JSON sidecars under `.youtify/playlists/`.
+- **Browse by Album / Artist / Genre / Year** — a cover-art card grid; pick a card to open a hero view (▶ Play all) of that group's tracks.
 - **Filter & sort** — `field=value` filter chips across any metadata (incl. custom tags) plus a sort selector, on top of full-text search.
 - Each save also writes an **archive** under `<save-dir>/.youtify/`: a copy of the source audio plus a JSON sidecar. This lets you re-render without re-downloading and rebuild the index if the database is ever lost.
 - A small **SQLite index** (`metadata.db`) powers the library and tag suggestions; it lives in the cache directory and is rebuilt from the sidecars on startup.

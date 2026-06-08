@@ -10,6 +10,8 @@
                 return [p.eq_preset || '', p.mbc_preset || '', p.enhance_mode || '', p.enhance_intensity,
                 !!p.normalize, p.normalize_i, !!p.original].join('|');
             }
+            // Loudness target -> friendly word (no LUFS numbers in the UI).
+            const LOUD_LABEL = { '-12': 'Loud', '-16': 'Normal', '-23': 'Quiet' };
             function snapParts(p) {
                 if (p.original) return ['Original'];
                 const lvl = { '1': 'Lo', '1.0': 'Lo', '1.5': 'Md', '2': 'Hi', '2.0': 'Hi' }[String(p.enhance_intensity)] || '';
@@ -17,7 +19,7 @@
                 if (p.eq_preset) bits.push('EQ ' + p.eq_preset);
                 if (p.mbc_preset) bits.push('Cmp ' + p.mbc_preset);
                 if (p.enhance_mode) bits.push(p.enhance_mode + (lvl ? ' ' + lvl : ''));
-                if (p.normalize) bits.push('Norm ' + p.normalize_i);
+                if (p.normalize) bits.push(LOUD_LABEL[String(p.normalize_i)] || ('Norm ' + p.normalize_i));
                 return bits.length ? bits : ['Dry'];
             }
             function snapLabel(p) { return snapParts(p).join(' · '); }
@@ -94,7 +96,73 @@
                 const pos = (currentSrc && previewAudio.currentTime > 0) ? previewAudio.currentTime : rangeStart();
                 playPreview(previewUrlFrom(s.params), pos);
             }
-            els.abClear.addEventListener('click', () => { snapshots = []; activeSnapshotId = null; renderSnapshots(); });
+            els.abClear.addEventListener('click', () => { snapshots = []; activeSnapshotId = null; stopGenQueue(); renderSnapshots(); });
+
+            // --- Generate render queue ---
+            // Generate enqueues combos and renders them one at a time in the
+            // background (each /stream call renders + caches that combo server-side).
+            // A chip appears only once its render finishes; progress shows N/total.
+            // Clear stops everything; further Generates append to the running queue.
+            let genQueue = [];
+            let genActive = false;
+            let genAbort = null;
+            let genTotal = 0, genDone = 0;
+
+            function updateGenProgress() {
+                const el = els.genProgress;
+                if (!el) return;
+                if (genActive || genQueue.length) {
+                    el.style.display = 'inline';
+                    el.textContent = `${genDone}/${genTotal}`;
+                } else {
+                    el.style.display = 'none';
+                    el.textContent = '';
+                }
+            }
+            function enqueueCombos(combos) {
+                let added = 0;
+                combos.forEach(p => {
+                    const k = paramsKey(p);
+                    if (snapshots.find(x => paramsKey(x.params) === k)) return;   // already a chip
+                    if (genQueue.find(q => paramsKey(q) === k)) return;           // already queued
+                    if (snapshots.length + genQueue.length >= MAX_SNAPSHOTS) return;
+                    genQueue.push(p); added++;
+                });
+                genTotal += added;
+                updateGenProgress();
+                runGenQueue();
+                return added;
+            }
+            async function runGenQueue() {
+                if (genActive) return;
+                genActive = true;
+                updateGenProgress();
+                while (genQueue.length) {
+                    const p = genQueue[0];
+                    genAbort = new AbortController();
+                    try {
+                        // GET /stream renders + caches the combo; we discard the body.
+                        await fetch(previewUrlFrom(p), { signal: genAbort.signal });
+                        addSnapshotLazy(p);
+                        renderSnapshots();
+                    } catch (e) {
+                        if (e.name === 'AbortError') break;   // Clear pressed
+                    }
+                    genQueue.shift();
+                    genDone++;
+                    updateGenProgress();
+                }
+                genActive = false;
+                genAbort = null;
+                if (!genQueue.length) { genTotal = 0; genDone = 0; }
+                updateGenProgress();
+            }
+            function stopGenQueue() {
+                genQueue = [];
+                if (genAbort) { try { genAbort.abort(); } catch (e) { } }
+                genActive = false; genAbort = null; genTotal = 0; genDone = 0;
+                updateGenProgress();
+            }
 
             // --- Batch "Generate combos" -> Mixes (lazy chips) ---
             function optsOf(sel, dropEmpty) {
@@ -118,8 +186,7 @@
                                 eq_preset: eq || '', mbc_preset: comp || '',
                                 enhance_mode: enh || '',
                                 enhance_intensity: enh ? intn : '1.5',
-                                normalize: loud !== 'off',
-                                normalize_i: loud === 'off' ? '-16' : loud,
+                                normalize: true, normalize_i: loud,
                                 original: false,
                             };
                             const k = paramsKey(p);
@@ -131,11 +198,11 @@
                 const ov = document.createElement('div');
                 ov.className = 'gen-overlay';
                 const dims = [
-                    { key: 'eq', label: 'EQ preset', opts: [{ value: '', label: 'Off' }].concat(optsOf(els.eqPresetSelect, true)) },
-                    { key: 'comp', label: 'Compression', opts: [{ value: '', label: 'Off' }].concat(optsOf(els.mbcPresetSelect, true)) },
-                    { key: 'enh', label: 'Enhance', opts: [{ value: '', label: 'None' }].concat(optsOf(els.enhanceModeSelect, true)) },
-                    { key: 'intensity', label: 'Enhance intensity', opts: [{ value: '1.0', label: 'Low' }, { value: '1.5', label: 'Mid' }, { value: '2.0', label: 'High' }] },
-                    { key: 'loud', label: 'Loudness (LUFS)', opts: [{ value: 'off', label: 'Off' }, { value: '-12', label: '-12' }, { value: '-16', label: '-16' }, { value: '-23', label: '-23' }] },
+                    { key: 'eq', label: 'EQ preset', opts: optsOf(els.eqPresetSelect, true) },
+                    { key: 'comp', label: 'Compression', opts: optsOf(els.mbcPresetSelect, true) },
+                    { key: 'enh', label: 'Enhance', opts: optsOf(els.enhanceModeSelect, true) },
+                    { key: 'intensity', label: 'Enhance level', opts: [{ value: '1.0', label: 'Low' }, { value: '1.5', label: 'Mid' }, { value: '2.0', label: 'High' }] },
+                    { key: 'loud', label: 'Loudness', opts: [{ value: '-12', label: 'Loud' }, { value: '-16', label: 'Normal' }, { value: '-23', label: 'Quiet' }] },
                 ];
                 const groups = dims.map(d => `
                     <div class="gen-dim" data-key="${d.key}">
@@ -146,13 +213,13 @@
                 ov.innerHTML = `
                     <div class="gen-panel" role="dialog" aria-modal="true">
                         <h3>Generate mixes</h3>
-                        <div class="gen-sub">Tick the values to combine. Every combination is added to Mixes as a chip — each renders when you click it.</div>
+                        <div class="gen-sub">Tick the values to combine — leave a row untouched to keep that effect off. Each combination renders in the background and appears in Mixes when ready.</div>
                         ${groups}
                         <div class="gen-foot">
                             <span class="gen-count" id="genCount">0 mixes</span>
                             <span style="display:flex; gap:0.5rem;">
                                 <button id="genCancel" type="button" style="background:rgba(255,255,255,0.05); border:1px solid var(--card-border);">Cancel</button>
-                                <button id="genAdd" type="button">Add to Mixes</button>
+                                <button id="genAdd" type="button">Generate</button>
                             </span>
                         </div>
                     </div>`;
@@ -180,12 +247,9 @@
                 ov.addEventListener('click', e => { if (e.target === ov) close(); });
                 ov.querySelector('#genCancel').addEventListener('click', close);
                 addBtn.addEventListener('click', () => {
-                    const combos = buildCombos(selOf());
-                    let added = 0;
-                    for (const p of combos) { if (addSnapshotLazy(p)) added++; }
-                    renderSnapshots();
+                    const added = enqueueCombos(buildCombos(selOf()));
                     close();
-                    showToast(`Added ${added} mix${added === 1 ? '' : 'es'} — click any to render & play.`);
+                    showToast(added ? `Generating ${added} mix${added === 1 ? '' : 'es'}…` : 'Those mixes are already queued or made.');
                 });
             }
             els.abGenerate.addEventListener('click', openGenerator);

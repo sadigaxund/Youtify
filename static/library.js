@@ -25,7 +25,8 @@
                 let libFilters = [];                    // [{field, value}]
                 let libSort = { field: 'created_at', dir: -1 };
                 let libPlaylists = [];                  // sidebar playlists
-                let currentSource = { type: 'all' };    // {type:'all'} | {type:'playlist', ...playlist}
+                let currentSource = { type: 'all' };    // {type:'all'} | {type:'playlist',...} | {type:'browse', field, value}
+                let browseField = 'album';               // active Browse-by facet
                 let createFilters = [];                 // dynamic-playlist builder chips
                 let createKind = 'manual';
                 let createCoverBase64 = null;
@@ -209,7 +210,67 @@
                         const ids = currentSource.track_ids || [];
                         return libItems.filter(it => ids.includes(it.youtube_id));
                     }
+                    if (currentSource.type === 'browse') {
+                        const { field, value } = currentSource;
+                        return libItems.filter(it => {
+                            if (field === 'artist') return (it.artists || []).includes(value);
+                            if (field === 'genre') return (it.genres || []).includes(value);
+                            if (field === 'album') return (it.album || '') === value;
+                            if (field === 'year') return String(it.year) === value;
+                            return false;
+                        });
+                    }
                     return libItems;
+                }
+
+                // --- Browse-by facets (cover-art card grid) ---
+                const BROWSE_FIELDS = [['album', 'Albums'], ['artist', 'Artists'], ['genre', 'Genres'], ['year', 'Years']];
+                function browseValuesFor(field) {
+                    const map = new Map();   // value -> {value, count, coverId, updated}
+                    libItems.forEach(it => {
+                        let vals;
+                        if (field === 'artist') vals = it.artists || [];
+                        else if (field === 'genre') vals = it.genres || [];
+                        else if (field === 'album') vals = it.album ? [it.album] : [];
+                        else if (field === 'year') vals = (it.year != null && it.year !== '') ? [String(it.year)] : [];
+                        else vals = [];
+                        vals.forEach(v => {
+                            v = String(v).trim(); if (!v) return;
+                            const e = map.get(v) || { value: v, count: 0, coverId: it.id, updated: it.updated_at };
+                            e.count++; map.set(v, e);
+                        });
+                    });
+                    return [...map.values()].sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+                }
+                function renderBrowse() {
+                    const tabs = $('browseTabs'); tabs.innerHTML = '';
+                    BROWSE_FIELDS.forEach(([f, label]) => {
+                        const b = document.createElement('button');
+                        b.type = 'button'; b.className = 'browse-tab' + (f === browseField ? ' active' : '');
+                        b.textContent = label;
+                        b.addEventListener('click', () => { browseField = f; renderBrowse(); });
+                        tabs.appendChild(b);
+                    });
+                    const grid = $('browseGrid'); grid.innerHTML = '';
+                    const circular = browseField === 'artist';
+                    browseValuesFor(browseField).forEach(v => {
+                        const card = document.createElement('div');
+                        card.className = 'browse-card' + (circular ? ' circ' : '');
+                        const img = document.createElement('img');
+                        img.className = 'browse-card-cover'; img.loading = 'lazy'; img.alt = '';
+                        img.onerror = () => { img.onerror = null; img.src = PLACEHOLDER; };
+                        img.src = `/library/${v.coverId}/cover?v=${encodeURIComponent(v.updated || '')}`;
+                        const name = document.createElement('div');
+                        name.className = 'browse-card-name'; name.textContent = v.value; name.title = v.value;
+                        const cnt = document.createElement('div');
+                        cnt.className = 'browse-card-count'; cnt.textContent = v.count + ' track' + (v.count === 1 ? '' : 's');
+                        card.append(img, name, cnt);
+                        card.addEventListener('click', () => {
+                            currentSource = { type: 'browse', field: browseField, value: v.value, name: v.value, coverId: v.coverId, updated: v.updated };
+                            renderLibrary();
+                        });
+                        grid.appendChild(card);
+                    });
                 }
                 function applyFilters(items) {
                     const q = ($('libSearch').value || '').toLowerCase();
@@ -255,6 +316,26 @@
                     }
                     renderChips();
                     visibleItems = applySort(applyFilters(sourceItems()));
+
+                    // Browse band on "All Tracks"; hero header when a facet is open.
+                    const browseMode = currentSource.type === 'all';
+                    const isBrowse = currentSource.type === 'browse';
+                    if ($('libBrowse')) {
+                        $('libBrowse').style.display = browseMode ? 'block' : 'none';
+                        if (browseMode) renderBrowse();
+                    }
+                    if ($('libHero')) {
+                        $('libHero').style.display = isBrowse ? 'flex' : 'none';
+                        if (isBrowse) {
+                            $('libHeroKind').textContent = ({ album: 'Album', artist: 'Artist', genre: 'Genre', year: 'Year' })[currentSource.field] || '';
+                            $('libHeroName').textContent = currentSource.name;
+                            $('libHeroCount').textContent = visibleItems.length + ' track' + (visibleItems.length === 1 ? '' : 's');
+                            const hc = $('libHeroCover');
+                            hc.classList.toggle('circ', currentSource.field === 'artist');
+                            hc.onerror = () => { hc.onerror = null; hc.src = PLACEHOLDER; };
+                            hc.src = `/library/${currentSource.coverId}/cover?v=${encodeURIComponent(currentSource.updated || '')}`;
+                        }
+                    }
 
                     const list = $('libList'); list.innerHTML = '';
                     $('libEmpty').style.display = visibleItems.length ? 'none' : 'block';
@@ -594,7 +675,7 @@
                         field('libFxMbc', 'Compression', cloneOptions('mbcPresetSelect', true)) +
                         field('libFxEnhance', 'Enhance', cloneOptions('enhanceModeSelect', true)) +
                         field('libFxIntensity', 'Intensity', cloneOptions('enhanceIntensitySelect', false)) +
-                        field('libFxNormI', 'Loudness (LUFS)', cloneOptions('normalizeISelect', false)) +
+                        field('libFxNormI', 'Loudness', cloneOptions('normalizeISelect', false)) +
                         `</div>` +
                         `<div class="fx-toggles">
                             <label><input type="checkbox" id="libFxNorm"> Normalize</label>
@@ -726,6 +807,10 @@
                 // Cover uploader for the edit view (reuses the shared resizer).
                 wireCover($('libThumbUpload'), $('libEditThumb'), $('libUploadThumbBtn'), $('libResetThumbBtn'),
                     b64 => { libEditCoverBase64 = b64; }, () => libEditResetUrl);
+
+                // Browse hero: Play all (first track; prev/next step the rest) + Back.
+                $('libHeroPlay').addEventListener('click', () => { if (visibleItems.length) libTogglePlay(visibleItems[0].id); });
+                $('libHeroBack').addEventListener('click', () => { currentSource = { type: 'all' }; renderLibrary(); });
 
                 // Wiring (view navigation)
                 $('navDownload').addEventListener('click', () => showView('download'));

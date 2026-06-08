@@ -119,6 +119,10 @@
                 if (els.metaAlbum.value.trim()) params.set('meta_album', els.metaAlbum.value.trim());
                 if (els.metaGenre.value.trim()) params.set('meta_genre', els.metaGenre.value.trim());
                 if (els.metaYear.value.trim()) params.set('meta_year', els.metaYear.value.trim());
+                // Custom filename override (extension still set by the export format).
+                if (els.filenameCustomToggle && els.filenameCustomToggle.checked && els.filenameCustom.value.trim()) {
+                    params.set('custom_filename', els.filenameCustom.value.trim());
+                }
 
                 // Custom tags + cover go in the POST body (a base64 image is far
                 // too large for the query string and would abort the request).

@@ -14,6 +14,7 @@ Schema:
 """
 
 import os
+import re
 import json
 import glob
 import sqlite3
@@ -337,18 +338,26 @@ class AudioMetadataDB:
                     f"WHERE {col} IS NOT NULL AND CAST({col} AS TEXT) LIKE ? ESCAPE '\\' ORDER BY {col} LIMIT ?",
                     lambda pat, lim: (pat, lim), q, limit)
 
+            # Custom-tag values (and composer) are stored as a single delimiter-
+            # joined string per track (e.g. "Sad|Angry"). Split them so the
+            # autocomplete suggests INDIVIDUAL tokens, not the whole joined string.
             key = "Composer" if field == "composer" else field
-            if not q:
-                rows = conn.execute(
-                    "SELECT DISTINCT field_value AS v FROM metadata_fields "
-                    "WHERE field_name=? AND field_value <> '' ORDER BY field_value LIMIT ?",
-                    (key, limit)).fetchall()
-                return [r["v"] for r in rows]
-            return self._prefix_then_contains(
-                conn,
-                "SELECT DISTINCT field_value FROM metadata_fields "
-                "WHERE field_name=? AND field_value LIKE ? ESCAPE '\\' ORDER BY field_value LIMIT ?",
-                lambda pat, lim: (key, pat, lim), q, limit)
+            rows = conn.execute(
+                "SELECT DISTINCT field_value AS v FROM metadata_fields "
+                "WHERE field_name=? AND field_value <> '' ORDER BY field_value",
+                (key,)).fetchall()
+            tokens, seen = [], set()
+            for r in rows:
+                for tok in re.split(r"[|,;]", str(r["v"])):
+                    tok = tok.strip()
+                    if tok and tok.lower() not in seen:
+                        seen.add(tok.lower()); tokens.append(tok)
+            ql = q.lower()
+            if ql:
+                pref = [t for t in tokens if t.lower().startswith(ql)]
+                cont = [t for t in tokens if ql in t.lower() and not t.lower().startswith(ql)]
+                tokens = pref + cont
+            return tokens[:limit]
 
     def suggest_custom_keys(self, q: str = "", limit: int = 20) -> List[str]:
         """Distinct custom-tag key names (for the key input autocomplete)."""

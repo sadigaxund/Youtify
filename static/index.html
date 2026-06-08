@@ -90,11 +90,18 @@
                             <i data-lucide="sparkles" style="width:14px"></i>
                             <span>Audio Effects</span>
                         </div>
-                        <label class="original-toggle">
-                            <input type="checkbox" id="originalToggle" style="display:none">
-                            <div class="toggle-switch"></div>
-                            <span>Original</span>
-                        </label>
+                        <div style="display:flex; align-items:center; gap:1rem;">
+                            <label class="original-toggle" title="Cache lossless intermediates so re-rendering similar mixes is faster (uses disk). Not an audio effect.">
+                                <input type="checkbox" id="turboToggle" style="display:none">
+                                <div class="toggle-switch"></div>
+                                <span>Turbo</span>
+                            </label>
+                            <label class="original-toggle">
+                                <input type="checkbox" id="originalToggle" style="display:none">
+                                <div class="toggle-switch"></div>
+                                <span>Original</span>
+                            </label>
+                        </div>
                     </div>
 
                     <div id="advancedControls" class="audio-grid">
@@ -107,9 +114,9 @@
                                 </label>
                                 <select id="normalizeISelect" class="styled-select-mini"
                                     style="width:auto; padding:0.2rem 0.4rem;">
-                                    <option value="-12">-12 LUFS (Loud)</option>
-                                    <option value="-16" selected>-16 LUFS (Std)</option>
-                                    <option value="-23">-23 LUFS (Quiet)</option>
+                                    <option value="-12">Loud</option>
+                                    <option value="-16" selected>Normal</option>
+                                    <option value="-23">Quiet</option>
                                 </select>
                             </div>
                         </div>
@@ -173,26 +180,18 @@
                                 </select>
                             </div>
                         </div>
-                        <div class="grid-item">
-                            <label>⚡ Turbo Render</label>
-                            <div style="display:flex; gap:0.4rem; align-items:center;">
-                                <label class="mini-toggle">
-                                    <input type="checkbox" id="turboToggle">
-                                    <div class="mini-check"><i data-lucide="check"></i></div>
-                                </label>
-                                <span style="font-size:0.72rem; opacity:0.6;">Cache stages for faster re-renders (uses disk)</span>
-                            </div>
-                        </div>
                     </div>
 
                     <!-- A/B compare: each Play snapshots the current effect set so you
                          can flip between combos without touching the live controls. -->
                     <div id="abCompare" class="ab-compare">
                         <div class="ab-head">
-                            <span><i data-lucide="layers" style="width:12px;height:12px;"></i> Mixes</span>
+                            <span><i data-lucide="layers" style="width:12px;height:12px;"></i> Mixes
+                                <span id="genProgress" class="gen-progress" style="display:none;"></span>
+                            </span>
                             <span style="display:inline-flex; gap:0.3rem;">
                                 <button id="abGenerate" type="button" title="Generate many mixes at once">⊞ Generate</button>
-                                <button id="abClear" type="button" title="Clear all mixes">Clear</button>
+                                <button id="abClear" type="button" title="Clear mixes & stop generating">Clear</button>
                             </span>
                         </div>
                         <div id="abList" class="ab-list">
@@ -228,6 +227,12 @@
                                     <i data-lucide="rotate-ccw" style="width:11px; height:11px;"></i>
                                     <span>Reset</span>
                                 </button>
+                            </div>
+                            <!-- Fill the space under the cover buttons. -->
+                            <div style="display:flex; align-items:center; justify-content:space-between; gap:0.4rem; margin-top:0.5rem;">
+                                <label style="font-size:0.68rem; color:var(--text-dim); font-weight:600;"
+                                    title="Separator for multi-value tags (artist / genre / custom).">Tag separator</label>
+                                <input type="text" id="delimiterInput" value="|" maxlength="5" class="tech-delim" autocomplete="off">
                             </div>
                         </div>
 
@@ -293,25 +298,40 @@
                         <div id="customTagsContainer" style="display:flex; flex-direction:column; gap:0.4rem;"></div>
                     </div>
 
-                    <!-- Filename Preview -->
-                    <div style="margin-top:0.25rem;">
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <label style="font-size:0.7rem; color:var(--text-dim); font-weight:600;">Filename</label>
-                            <div style="display:flex; align-items:center; gap:0.3rem;">
-                                <label style="font-size:0.65rem; color:var(--text-dim);">Tag separator</label>
-                                <input type="text" id="delimiterInput" value="|" maxlength="5"
-                                    style="width:32px; padding:0.2rem 0.3rem; font-size:0.75rem; text-align:center; border-radius:6px; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); color:#fff; font-family:monospace;">
-                            </div>
-                        </div>
-                        <div id="filenamePreview"
-                            style="padding:0.5rem 0.7rem; font-size:0.8rem; border-radius:8px; background:rgba(255,255,255,0.03); border:1px solid var(--card-border); color:rgba(255,255,255,0.7); word-break:break-all; font-family:monospace; margin-top:0.3rem;">
-                            Title.mp3
-                        </div>
-                    </div>
-
                 </div>
 
             </div> <!-- /optionsPanel -->
+
+            <!-- Output & technical: export format (source -> target), Turbo, tag
+                 separator, filename (auto + optional custom). Collapsed by default. -->
+            <div id="techPanel" class="tech-panel" style="display:none;">
+                <button id="techToggle" type="button" class="tech-toggle" aria-expanded="false">
+                    <span><i data-lucide="sliders-horizontal" style="width:13px;height:13px;"></i> Export options</span>
+                    <span id="techChevron" class="tech-chevron">▸</span>
+                </button>
+                <div id="techBody" class="tech-body" style="display:none;">
+                    <div class="fmt-flow">
+                        <span id="srcFmt" class="fmt-pill" title="Source format">—</span>
+                        <span class="fmt-arrow">→</span>
+                        <select id="formatSelect" class="styled-select-mini" title="Export format" style="width:auto;">
+                            <option value="auto" selected>Auto</option>
+                            <option value="mp3">MP3 320</option>
+                            <option value="flac">FLAC</option>
+                            <option value="wav">WAV</option>
+                        </select>
+                        <span id="fmtResolved" class="fmt-resolved"></span>
+                    </div>
+                    <!-- Filename: the same field; pencil (on hover) makes it editable,
+                         ↺ reverts to the auto-generated name. -->
+                    <div class="tech-fname-wrap">
+                        <input type="checkbox" id="filenameCustomToggle" style="display:none;">
+                        <div id="filenamePreview" class="tech-fname">Title.mp3</div>
+                        <input type="text" id="filenameCustom" class="tech-fname-input" placeholder="Custom name…" style="display:none;">
+                        <button id="filenameEditBtn" type="button" class="fname-btn fname-edit" title="Rename">✎</button>
+                        <button id="filenameAutoBtn" type="button" class="fname-btn fname-auto" title="Use the auto name" style="display:none;">↺</button>
+                    </div>
+                </div>
+            </div>
 
             <!-- Sticky action bar: progress + Download/New always reachable -->
             <div id="actionBar" class="action-bar" style="display:none;">
@@ -337,13 +357,6 @@
                 </div>
 
                 <div class="action-buttons">
-                    <select id="formatSelect" class="styled-select-mini" title="Export format"
-                        style="flex:0 0 auto; width:auto;">
-                        <option value="auto" selected>Auto</option>
-                        <option value="mp3">MP3 320</option>
-                        <option value="flac">FLAC</option>
-                        <option value="wav">WAV</option>
-                    </select>
                     <button id="downloadBtn" style="flex:1">
                         <i data-lucide="download"></i>
                         <span>Download</span>
@@ -403,6 +416,28 @@
                         </div>
                     </aside>
                     <div class="lib-main">
+                        <!-- Browse-by facet cards (Album/Artist/Genre/Year). Shown on
+                             "All Tracks"; clicking a card drills into a hero view. -->
+                        <div id="libBrowse" class="lib-browse" style="display:none;">
+                            <div class="browse-head">
+                                <span class="browse-by">Browse by</span>
+                                <div id="browseTabs" class="browse-tabs"></div>
+                            </div>
+                            <div id="browseGrid" class="browse-grid"></div>
+                        </div>
+                        <!-- Hero header when a facet card is opened -->
+                        <div id="libHero" class="lib-hero" style="display:none;">
+                            <img id="libHeroCover" class="lib-hero-cover" alt="">
+                            <div class="lib-hero-meta">
+                                <div id="libHeroKind" class="lib-hero-kind"></div>
+                                <div id="libHeroName" class="lib-hero-name"></div>
+                                <div id="libHeroCount" class="lib-hero-count"></div>
+                                <div class="lib-hero-actions">
+                                    <button id="libHeroPlay" type="button" class="lib-hero-play">▶ Play all</button>
+                                    <button id="libHeroBack" type="button" class="lib-hero-back">← Back</button>
+                                </div>
+                            </div>
+                        </div>
                         <div class="lib-toolbar">
                             <input type="text" id="libSearch" class="lib-search" placeholder="Search title, artist, genre…">
                             <div class="lib-controls">

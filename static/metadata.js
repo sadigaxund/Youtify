@@ -2,48 +2,170 @@
             // Generic library autocomplete via a native <datalist>. fieldOrFn is a
             // /suggestions field name (or a function returning one at fetch time,
             // used for custom-tag values keyed by the row's current key).
-            let _suggestSeq = 0;
+            // Single-value autocomplete with the same styled dropdown as the
+            // Artist/Genre fields (native <datalist> didn't open on mobile and
+            // looked out of place). Picking a suggestion fills the input. `fieldOrFn`
+            // is a /suggestions field name or a function returning one.
             function attachSuggest(input, fieldOrFn) {
-                const dl = document.createElement('datalist');
-                dl.id = 'dl' + (++_suggestSeq);
-                input.setAttribute('list', dl.id);
-                input.after(dl);
+                const wrap = document.createElement('span');
+                wrap.className = 'suggest-wrap';
+                input.parentNode.insertBefore(wrap, input);
+                wrap.appendChild(input);
+                input.style.width = '100%';
+                const dd = document.createElement('div');
+                dd.className = 'chip-suggest';
+                dd.style.display = 'none';
+                wrap.appendChild(dd);
+                let curList = [], focusIdx = -1;
+                const hide = () => { dd.style.display = 'none'; focusIdx = -1; };
+                const highlight = () => Array.from(dd.children).forEach((c, i) => c.classList.toggle('active', i === focusIdx));
+                const pick = (v) => { input.value = v; hide(); input.dispatchEvent(new Event('input', { bubbles: true })); };
+                function renderDD(list) {
+                    curList = list; focusIdx = -1; dd.innerHTML = '';
+                    if (!list.length) { hide(); return; }
+                    list.forEach(v => {
+                        const it = document.createElement('div');
+                        it.className = 'chip-suggest-item'; it.textContent = v;
+                        it.addEventListener('mousedown', (e) => { e.preventDefault(); pick(v); });
+                        dd.appendChild(it);
+                    });
+                    dd.style.display = 'block';
+                }
                 const run = debounce(async () => {
                     const field = (typeof fieldOrFn === 'function') ? fieldOrFn() : fieldOrFn;
-                    if (!field) { dl.innerHTML = ''; return; }
+                    if (!field) { hide(); return; }
                     try {
                         const res = await fetch(`/suggestions?field=${encodeURIComponent(field)}&q=${encodeURIComponent(input.value)}`);
-                        if (!res.ok) return;
+                        if (!res.ok) { hide(); return; }
                         const cur = input.value.trim().toLowerCase();
-                        // Drop an exact match so the dropdown doesn't re-pop right
-                        // after the user picks/types that value.
-                        const list = ((await res.json()).suggestions || [])
-                            .filter(v => String(v).toLowerCase() !== cur);
-                        dl.innerHTML = list.map(v => `<option value="${String(v).replace(/"/g, '&quot;')}">`).join('');
-                    } catch (e) { /* offline -> no suggestions */ }
+                        renderDD(((await res.json()).suggestions || []).filter(v => String(v).toLowerCase() !== cur));
+                    } catch (e) { hide(); }
                 }, 150);
                 input.addEventListener('input', run);
                 input.addEventListener('focus', run);
+                input.addEventListener('keydown', (e) => {
+                    const n = dd.children.length;
+                    if (e.key === 'ArrowDown') { e.preventDefault(); if (dd.style.display === 'none') { run(); return; } focusIdx = (focusIdx + 1) % n; highlight(); }
+                    else if (e.key === 'ArrowUp') { e.preventDefault(); if (!n) return; focusIdx = (focusIdx - 1 + n) % n; highlight(); }
+                    else if (e.key === 'Enter' && focusIdx >= 0) { e.preventDefault(); pick(curList[focusIdx]); }
+                    else if (e.key === 'Escape') { hide(); }
+                });
+                input.addEventListener('blur', () => setTimeout(hide, 150));
+            }
+
+            // Reusable multi-value chip input with a styled suggestion dropdown
+            // (same look/behaviour as the Artist/Genre fields): type + Enter (or
+            // comma) -> chip; Backspace on empty removes the last; clicking or
+            // arrow+Enter on a suggestion adds it immediately. `suggestField` is a
+            // /suggestions field name or a function returning one (per-row key).
+            function makeChipValue(initialValues, suggestField) {
+                const wrap = document.createElement('div');
+                wrap.className = 'chip-input';
+                wrap.style.position = 'relative';
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'chip-input-field';
+                input.placeholder = 'value…';
+                input.autocomplete = 'off';
+                const dd = document.createElement('div');
+                dd.className = 'chip-suggest';
+                dd.style.display = 'none';
+                let values = Array.isArray(initialValues) ? initialValues.slice() : [];
+                let curList = [], focusIdx = -1;
+
+                function render() {
+                    wrap.querySelectorAll('.chip').forEach(c => c.remove());
+                    values.forEach(v => {
+                        const chip = document.createElement('span');
+                        chip.className = 'chip';
+                        chip.textContent = v;
+                        const x = document.createElement('span');
+                        x.className = 'chip-x';
+                        x.textContent = '×';
+                        x.addEventListener('click', (e) => { e.stopPropagation(); values = values.filter(z => z !== v); render(); fire(); });
+                        chip.appendChild(x);
+                        wrap.insertBefore(chip, input);
+                    });
+                }
+                function fire() { if (typeof updateFilenamePreview === 'function') updateFilenamePreview(); }
+                function add(v) {
+                    v = (v || '').trim();
+                    if (v && !values.includes(v)) { values.push(v); render(); fire(); }
+                    input.value = '';
+                    hideDD();
+                    fetchSuggest();   // refresh list (the added value drops out)
+                }
+                function hideDD() { dd.style.display = 'none'; focusIdx = -1; }
+                function highlight() {
+                    Array.from(dd.children).forEach((c, i) => c.classList.toggle('active', i === focusIdx));
+                    if (focusIdx >= 0 && dd.children[focusIdx]) dd.children[focusIdx].scrollIntoView({ block: 'nearest' });
+                }
+                function renderDD(list) {
+                    curList = list; focusIdx = -1; dd.innerHTML = '';
+                    if (!list.length) { hideDD(); return; }
+                    list.forEach(v => {
+                        const it = document.createElement('div');
+                        it.className = 'chip-suggest-item';
+                        it.textContent = v;
+                        it.addEventListener('mousedown', (e) => { e.preventDefault(); add(v); });
+                        dd.appendChild(it);
+                    });
+                    dd.style.display = 'block';
+                }
+                const fetchSuggest = debounce(async () => {
+                    const field = (typeof suggestField === 'function') ? suggestField() : suggestField;
+                    if (!field) { hideDD(); return; }
+                    try {
+                        const res = await fetch(`/suggestions?field=${encodeURIComponent(field)}&q=${encodeURIComponent(input.value)}`);
+                        if (!res.ok) { hideDD(); return; }
+                        const cur = input.value.trim().toLowerCase();
+                        const list = ((await res.json()).suggestions || [])
+                            .filter(v => !values.includes(v) && String(v).toLowerCase() !== cur);
+                        renderDD(list);
+                    } catch (e) { hideDD(); }
+                }, 150);
+
+                input.addEventListener('input', fetchSuggest);
+                input.addEventListener('focus', fetchSuggest);
+                input.addEventListener('keydown', (e) => {
+                    const items = dd.children;
+                    if (e.key === 'ArrowDown') { e.preventDefault(); if (dd.style.display === 'none') { fetchSuggest(); return; } focusIdx = (focusIdx + 1) % items.length; highlight(); }
+                    else if (e.key === 'ArrowUp') { e.preventDefault(); if (!items.length) return; focusIdx = (focusIdx - 1 + items.length) % items.length; highlight(); }
+                    else if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); add(focusIdx >= 0 ? curList[focusIdx] : input.value); }
+                    else if (e.key === 'Escape') { hideDD(); }
+                    else if (e.key === 'Backspace' && !input.value && values.length) { values.pop(); render(); fire(); }
+                });
+                input.addEventListener('blur', () => { setTimeout(() => { if (input.value.trim()) add(input.value); hideDD(); }, 150); });
+                wrap.appendChild(input);
+                wrap.appendChild(dd);
+                wrap.addEventListener('click', (e) => { if (e.target === wrap || e.target === input) input.focus(); });
+                render();
+                return { wrap, getValues: () => values.slice(), input };
             }
 
             function addCustomTag(container, key = '', value = '') {
                 const row = document.createElement('div');
-                row.style.cssText = 'display:flex; gap:0.4rem; align-items:center;';
-                row.innerHTML = `
-                    <input type="text" placeholder="Key" value="${key}" class="custom-tag-key"
-                        style="flex:1; padding:0.3rem 0.5rem; font-size:0.75rem; border-radius:6px; background:rgba(255,255,255,0.03); border:1px solid var(--card-border); color:#fff;">
-                    <input type="text" placeholder="Value" value="${value}" class="custom-tag-value"
-                        style="flex:2; padding:0.3rem 0.5rem; font-size:0.75rem; border-radius:6px; background:rgba(255,255,255,0.03); border:1px solid var(--card-border); color:#fff;">
-                    <button type="button" onclick="this.parentElement.remove()"
-                        style="width:24px; height:24px; padding:0; margin:0; border-radius:6px; background:rgba(255,0,80,0.15); border:1px solid rgba(255,0,80,0.3); flex-shrink:0; display:flex; align-items:center; justify-content:center;">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                    </button>
-                `;
+                row.className = 'custom-tag-row';
+                const keyIn = document.createElement('input');
+                keyIn.type = 'text';
+                keyIn.className = 'custom-tag-key';
+                keyIn.placeholder = 'Key';
+                keyIn.value = key;
+                // Split an incoming joined value into individual chips.
+                const initial = value ? String(value).split(/[|,;]/).map(s => s.trim()).filter(Boolean) : [];
+                const chip = makeChipValue(initial, () => keyIn.value.trim());
+                chip.wrap.classList.add('custom-tag-value');
+                const rm = document.createElement('button');
+                rm.type = 'button';
+                rm.className = 'custom-tag-rm';
+                rm.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
+                rm.addEventListener('click', () => { row.remove(); if (typeof updateFilenamePreview === 'function') updateFilenamePreview(); });
+                row.append(keyIn, chip.wrap, rm);
                 container.appendChild(row);
-                const keyIn = row.querySelector('.custom-tag-key');
-                const valIn = row.querySelector('.custom-tag-value');
                 attachSuggest(keyIn, '__keys__');
-                attachSuggest(valIn, () => keyIn.value.trim());
+                // Expose getters for getCustomTags (chips aren't readable from DOM value).
+                row._getKey = () => keyIn.value.trim();
+                row._getValues = () => chip.getValues();
             }
             els.addTagBtn.addEventListener('click', () => addCustomTag(els.customTagsContainer));
 
@@ -56,10 +178,13 @@
 
             function getCustomTags(container) {
                 const tags = [];
-                container.querySelectorAll(':scope > div').forEach(row => {
-                    const key = row.querySelector('.custom-tag-key')?.value?.trim();
-                    const val = row.querySelector('.custom-tag-value')?.value?.trim();
-                    if (key && val) tags.push({ key, value: val });
+                const delim = (els.delimiterInput && els.delimiterInput.value) || '|';
+                container.querySelectorAll(':scope > .custom-tag-row').forEach(row => {
+                    const key = row._getKey ? row._getKey() : '';
+                    const vals = row._getValues ? row._getValues() : [];
+                    // Multiple chips are stored as one delimiter-joined value (so the
+                    // DB/embedding stay single-string; the UI keeps them individual).
+                    if (key && vals.length) tags.push({ key, value: vals.join(delim) });
                 });
                 return tags;
             }
@@ -430,13 +555,20 @@
                 }
             });
 
-            // --- Filename Preview (auto-generated from metadata) ---
-            function updateFilenamePreview() {
+            // --- Output & technical: format flow + filename (auto + custom) ---
+            // The export extension follows the chosen format ('auto' resolves to
+            // flac for a lossless source, else mp3 — same rule as the backend).
+            function resolvedExt() {
+                const f = els.formatSelect ? els.formatSelect.value : 'auto';
+                if (f === 'auto') return currentSourceLossless ? 'flac' : 'mp3';
+                return f;
+            }
+            // The auto-generated base name (no extension), from the metadata.
+            function autoFilenameBase() {
                 const title = els.metaTitle.value.trim() || 'Title';
                 const artist = selectedArtists.length > 0 ? selectedArtists.join(', ') : '';
                 const album = els.metaAlbum.value.trim();
                 const composer = getCustomTags(els.customTagsContainer).find(t => t.key.toLowerCase() === 'composer')?.value || '';
-
                 let parts = [title];
                 if (album) parts[0] = `${title} (${album})`;
                 if (artist || composer) {
@@ -444,8 +576,28 @@
                     if (composer) right = right ? `${right} (${composer})` : composer;
                     parts.push(right);
                 }
-                els.filenamePreview.textContent = parts.join(' - ') + '.mp3';
+                return parts.join(' - ');
             }
+            // The base name actually used for the saved file (custom overrides auto).
+            function currentFilenameBase() {
+                if (els.filenameCustomToggle && els.filenameCustomToggle.checked) {
+                    const v = (els.filenameCustom.value || '').trim();
+                    if (v) return v;
+                }
+                return autoFilenameBase();
+            }
+            function updateFilenamePreview() {
+                els.filenamePreview.textContent = currentFilenameBase() + '.' + resolvedExt();
+            }
+            // Source -> Target format display in the Output panel.
+            function updateFmtFlow() {
+                if (els.srcFmt) els.srcFmt.textContent = currentSrcLabel;
+                if (els.fmtResolved) {
+                    const auto = els.formatSelect && els.formatSelect.value === 'auto';
+                    els.fmtResolved.textContent = auto ? '→ ' + resolvedExt().toUpperCase() : '';
+                }
+            }
+
             // Update filename preview on any metadata field change
             ['metaTitle', 'metaAlbum'].forEach(id => {
                 els[id].addEventListener('input', updateFilenamePreview);
@@ -458,6 +610,41 @@
                 renderArtistTags();
                 renderGenreTags();
             });
+
+            // Output panel wiring: collapse/expand, format flow, custom filename.
+            if (els.techToggle) {
+                els.techToggle.addEventListener('click', () => {
+                    const open = els.techBody.style.display !== 'none';
+                    els.techBody.style.display = open ? 'none' : 'flex';
+                    els.techToggle.setAttribute('aria-expanded', open ? 'false' : 'true');
+                });
+            }
+            if (els.formatSelect) {
+                els.formatSelect.addEventListener('change', () => { updateFmtFlow(); updateFilenamePreview(); });
+            }
+            if (els.filenameCustomToggle) {
+                els.filenameCustomToggle.addEventListener('change', () => {
+                    const on = els.filenameCustomToggle.checked;
+                    // Same field swaps to an editable input; pencil <-> revert swap too.
+                    els.filenameCustom.style.display = on ? 'block' : 'none';
+                    els.filenamePreview.style.display = on ? 'none' : 'block';
+                    if (els.filenameEditBtn) els.filenameEditBtn.style.display = on ? 'none' : '';
+                    if (els.filenameAutoBtn) els.filenameAutoBtn.style.display = on ? '' : 'none';
+                    if (on) { if (!els.filenameCustom.value) els.filenameCustom.value = autoFilenameBase(); els.filenameCustom.focus(); }
+                    updateFilenamePreview();
+                });
+                // Pencil (appears on hover) -> edit; ↺ -> back to the generated name.
+                if (els.filenameEditBtn) els.filenameEditBtn.addEventListener('click', () => {
+                    els.filenameCustomToggle.checked = true;
+                    els.filenameCustomToggle.dispatchEvent(new Event('change'));
+                });
+                if (els.filenameAutoBtn) els.filenameAutoBtn.addEventListener('click', () => {
+                    els.filenameCustom.value = '';
+                    els.filenameCustomToggle.checked = false;
+                    els.filenameCustomToggle.dispatchEvent(new Event('change'));
+                });
+                els.filenameCustom.addEventListener('input', updateFilenamePreview);
+            }
 
             els.originalToggle.addEventListener('change', () => {
                 const isOriginal = els.originalToggle.checked;

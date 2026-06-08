@@ -151,6 +151,121 @@
             gap: 0.75rem;
         }
 
+        /* Multi-value chip input (custom tags + composer) */
+        .custom-tag-row { display: flex; gap: 0.4rem; align-items: flex-start; }
+        /* Key input, value chip-box and the × button share the same min height. */
+        .custom-tag-key {
+            flex: 1; min-width: 0; min-height: 36px; padding: 0.35rem 0.5rem; font-size: 0.75rem; border-radius: 6px;
+            background: rgba(255, 255, 255, 0.03); border: 1px solid var(--card-border); color: #fff; box-sizing: border-box;
+        }
+        .chip-input {
+            flex: 2; min-width: 0; display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center;
+            padding: 0.3rem 0.45rem; min-height: 36px; border-radius: 6px; box-sizing: border-box;
+            background: rgba(255, 255, 255, 0.03); border: 1px solid var(--card-border); cursor: text;
+        }
+        .chip-input-field {
+            flex: 1; min-width: 60px; padding: 0.1rem 0; font-size: 0.75rem;
+            border: none; background: transparent; color: #fff; outline: none;
+        }
+        .chip {
+            display: inline-flex; align-items: center; gap: 0.2rem;
+            padding: 0.15rem 0.45rem; font-size: 0.7rem; border-radius: 6px;
+            background: rgba(100, 140, 255, 0.15); border: 1px solid rgba(100, 140, 255, 0.3);
+            color: rgba(150, 175, 255, 1); white-space: nowrap;
+        }
+        .chip-x { cursor: pointer; opacity: 0.7; font-size: 0.95em; }
+        .chip-x:hover { opacity: 1; }
+        /* Wrapper that gives single-input autocompletes a positioning context. */
+        .suggest-wrap { position: relative; display: block; flex: 1 1 auto; min-width: 0; }
+        /* Suggestion dropdown for chip inputs (matches Artist/Genre styling). */
+        .chip-suggest {
+            position: absolute; left: 0; right: 0; top: calc(100% + 2px); z-index: 100;
+            max-height: 180px; overflow-y: auto;
+            background: rgba(15, 15, 25, 0.97); border: 1px solid var(--card-border);
+            border-radius: 10px; backdrop-filter: blur(16px); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }
+        .chip-suggest-item {
+            padding: 0.45rem 0.75rem; font-size: 0.78rem; cursor: pointer;
+            color: rgba(255, 255, 255, 0.85); border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        }
+        .chip-suggest-item:hover, .chip-suggest-item.active {
+            background: rgba(100, 140, 255, 0.12); color: #fff;
+        }
+        .custom-tag-rm {
+            width: 36px; height: 36px; padding: 0; margin: 0; border-radius: 6px; flex-shrink: 0;
+            background: rgba(255, 0, 80, 0.15); border: 1px solid rgba(255, 0, 80, 0.3);
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        /* Output & technical collapsible panel (above the action buttons) */
+        .tech-panel {
+            margin-top: 1rem;
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.02);
+            overflow: hidden;
+        }
+        .tech-toggle {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            padding: 0.6rem 0.85rem;
+            margin: 0;
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            cursor: pointer;
+        }
+        .tech-toggle:hover { color: #fff; transform: none; box-shadow: none; }
+        .tech-toggle span:first-child { display: inline-flex; align-items: center; gap: 0.4rem; }
+        .tech-chevron { transition: transform 0.18s ease; }
+        .tech-toggle[aria-expanded="true"] .tech-chevron { transform: rotate(90deg); }
+        /* Everything on one row: format flow + filename (wraps on narrow). */
+        .tech-body {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.6rem 0.9rem;
+            padding: 0.55rem 0.85rem 0.7rem;
+            border-top: 1px solid var(--card-border);
+        }
+        .fmt-flow { display: flex; align-items: center; gap: 0.5rem; flex: 0 0 auto; }
+        .fmt-pill {
+            display: inline-flex; align-items: center;
+            padding: 0.2rem 0.55rem; border-radius: 7px;
+            background: rgba(255, 255, 255, 0.06); border: 1px solid var(--card-border);
+            font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; color: #fff;
+        }
+        .fmt-arrow { color: var(--text-dim); }
+        .fmt-resolved { font-size: 0.7rem; color: var(--accent, #8ab4f8); }
+        .tech-delim {
+            width: 40px; padding: 0.25rem 0.3rem; text-align: center;
+            border-radius: 6px; background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border); color: #fff; font-family: monospace; font-size: 0.78rem;
+        }
+        /* Filename field — fills the rest of the row; same field stays editable
+           in place (full width, can be long). Pencil appears on hover. */
+        .tech-fname-wrap { flex: 1 1 220px; min-width: 0; display: flex; align-items: center; gap: 0.4rem; }
+        .tech-fname, .tech-fname-input {
+            flex: 1; min-width: 0; padding: 0.45rem 0.6rem; font-size: 0.8rem; border-radius: 8px;
+            font-family: monospace; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--card-border);
+        }
+        .tech-fname { color: rgba(255, 255, 255, 0.7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .tech-fname-input { color: #fff; }
+        .fname-btn {
+            width: 28px; height: 28px; flex-shrink: 0; padding: 0; margin: 0; border-radius: 7px;
+            background: rgba(255, 255, 255, 0.05); border: 1px solid var(--card-border); color: var(--text-dim);
+            font-size: 0.85rem; line-height: 1; display: flex; align-items: center; justify-content: center;
+        }
+        .fname-edit { opacity: 0; transition: opacity 0.12s; }
+        .tech-fname-wrap:hover .fname-edit, .fname-edit:focus { opacity: 1; }
+        .fname-btn:hover { color: #fff; transform: none; box-shadow: none; }
+
         @keyframes fadeIn {
             from {
                 opacity: 0;
@@ -810,25 +925,49 @@
         /* Batch "Generate combos" picker */
         .gen-overlay {
             position: fixed; inset: 0; z-index: 1000;
-            background: rgba(0, 0, 0, 0.55);
+            background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(4px);
             display: flex; align-items: center; justify-content: center;
             padding: 1rem;
         }
+        /* Solid (opaque) panel — --card-bg is translucent, which made it unreadable. */
         .gen-panel {
-            background: var(--card-bg, #15161c); border: 1px solid var(--card-border);
-            border-radius: 14px; width: min(560px, 96vw); max-height: 86vh; overflow-y: auto;
-            padding: 1.1rem 1.2rem; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            background: #16181f; border: 1px solid var(--card-border);
+            border-radius: 14px; width: min(540px, 96vw); max-height: 86vh; overflow-y: auto;
+            padding: 1.2rem 1.3rem; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
         }
-        .gen-panel h3 { margin: 0 0 0.2rem; font-size: 1rem; }
-        .gen-panel .gen-sub { color: var(--text-dim); font-size: 0.78rem; margin-bottom: 0.8rem; }
-        .gen-dim { margin-bottom: 0.7rem; }
-        .gen-dim > label { display: block; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); margin-bottom: 0.35rem; }
+        .gen-panel h3 { margin: 0 0 0.2rem; font-size: 1.05rem; }
+        .gen-panel .gen-sub { color: var(--text-dim); font-size: 0.78rem; margin-bottom: 1rem; }
+        /* Each dimension: aligned label column + wrapping option pills. */
+        .gen-dim {
+            display: grid; grid-template-columns: 94px 1fr; align-items: center; gap: 0.7rem;
+            padding: 0.55rem 0; border-top: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .gen-dim:first-of-type { border-top: none; padding-top: 0; }
+        .gen-dim > label { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-dim); }
         .gen-opts { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-        .gen-opt { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.78rem; padding: 0.25rem 0.5rem; border: 1px solid var(--card-border); border-radius: 8px; cursor: pointer; user-select: none; }
-        .gen-opt input { accent-color: var(--accent, #8ab4f8); }
-        .gen-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-top: 0.9rem; }
-        .gen-count { font-size: 0.8rem; color: var(--text-dim); }
-        .gen-foot button { width: auto; margin: 0; padding: 0.4rem 0.9rem; font-size: 0.8rem; border-radius: 8px; }
+        .gen-opt {
+            display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; line-height: 1.4;
+            padding: 0.25rem 0.75rem; border: 1px solid var(--card-border); border-radius: 999px;
+            cursor: pointer; user-select: none; white-space: nowrap;
+            background: rgba(255, 255, 255, 0.03); color: rgba(255, 255, 255, 0.85);
+            transition: background .12s, border-color .12s;
+        }
+        .gen-opt:hover { border-color: rgba(255, 255, 255, 0.3); }
+        .gen-opt:has(input:checked) { background: rgba(255, 0, 80, 0.16); border-color: var(--primary); color: #fff; }
+        .gen-opt input { accent-color: var(--primary); margin: 0; width: 0.9rem; height: 0.9rem; flex-shrink: 0; }
+        .gen-foot {
+            display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+            margin-top: 1rem; padding-top: 0.9rem; border-top: 1px solid var(--card-border);
+            position: sticky; bottom: -1.2rem; background: #16181f;
+        }
+        .gen-count { font-size: 0.82rem; color: var(--text-dim); }
+        .gen-foot button { width: auto; margin: 0; padding: 0.45rem 1rem; font-size: 0.82rem; border-radius: 8px; }
+        /* Queue progress chip next to "Mixes" */
+        .gen-progress {
+            font-size: 0.66rem; font-weight: 700; color: var(--primary);
+            background: rgba(255, 0, 80, 0.12); border: 1px solid rgba(255, 0, 80, 0.3);
+            border-radius: 999px; padding: 0.05rem 0.4rem; margin-left: 0.35rem;
+        }
 
         .ab-empty {
             font-size: 0.72rem;
@@ -1060,7 +1199,9 @@
             color: var(--primary);
             width: 24px;
             height: 24px;
+            flex-shrink: 0;
         }
+        .toast-icon svg { width: 24px; height: 24px; }
 
         .toast-title {
             font-weight: 600;
@@ -1081,6 +1222,20 @@
 
         .toast.error .toast-icon {
             color: #ff4d4d;
+        }
+
+        /* Mobile: span with margins, lift above the fixed now-playing mini-bar,
+           and keep the rounded corners (it looked boxy crammed at the edge). */
+        @media (max-width: 600px) {
+            .toast {
+                left: 0.9rem;
+                right: 0.9rem;
+                bottom: 6rem;
+                max-width: none;
+                transform: translateY(140px);
+                border-radius: 14px;
+            }
+            .toast.show { transform: translateY(0); }
         }
 
         .advanced-audio {
@@ -1222,6 +1377,68 @@
         .lib-main {
             flex: 1;
             min-width: 0;
+        }
+
+        /* Browse-by facet cards */
+        .lib-browse { margin-bottom: 1rem; }
+        .browse-head { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem; }
+        .browse-by { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); }
+        .browse-tabs { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+        .browse-tab {
+            width: auto; margin: 0; padding: 0.25rem 0.7rem; font-size: 0.74rem; border-radius: 999px;
+            background: rgba(255, 255, 255, 0.05); border: 1px solid var(--card-border); color: var(--text-dim);
+        }
+        .browse-tab.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+        .browse-tab:hover { transform: none; box-shadow: none; color: #fff; }
+        .browse-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+            gap: 0.8rem;
+        }
+        .browse-card { cursor: pointer; text-align: center; transition: transform 0.12s ease; }
+        .browse-card:hover { transform: translateY(-3px); }
+        .browse-card-cover {
+            width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: 10px;
+            background: rgba(255, 255, 255, 0.04); border: 1px solid var(--card-border);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+        }
+        .browse-card.circ .browse-card-cover { border-radius: 50%; }
+        .browse-card-name {
+            margin-top: 0.45rem; font-size: 0.78rem; font-weight: 600; color: #fff;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .browse-card-count { font-size: 0.68rem; color: var(--text-dim); }
+
+        /* Browse hero header */
+        .lib-hero {
+            display: flex; gap: 1.1rem; align-items: flex-end; margin-bottom: 1.1rem;
+            padding: 1.1rem; border-radius: 14px;
+            background: linear-gradient(135deg, rgba(255, 0, 80, 0.12), rgba(100, 140, 255, 0.10));
+            border: 1px solid var(--card-border);
+        }
+        .lib-hero-cover {
+            width: 140px; height: 140px; object-fit: cover; border-radius: 12px; flex-shrink: 0;
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); background: rgba(255, 255, 255, 0.05);
+        }
+        .lib-hero-cover.circ { border-radius: 50%; }
+        .lib-hero-meta { min-width: 0; }
+        .lib-hero-kind { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); }
+        .lib-hero-name { font-size: 1.6rem; font-weight: 800; color: #fff; line-height: 1.15; margin: 0.15rem 0 0.2rem; word-break: break-word; }
+        .lib-hero-count { font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.7rem; }
+        .lib-hero-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+        .lib-hero-play {
+            width: auto; margin: 0; padding: 0.45rem 1.1rem; font-size: 0.85rem; font-weight: 700;
+            border-radius: 999px; background: var(--primary); border: none; color: #fff;
+        }
+        .lib-hero-back {
+            width: auto; margin: 0; padding: 0.45rem 0.9rem; font-size: 0.8rem; border-radius: 999px;
+            background: rgba(255, 255, 255, 0.06); border: 1px solid var(--card-border); color: var(--text-dim);
+        }
+        @media (max-width: 560px) {
+            .lib-hero { flex-direction: column; align-items: flex-start; }
+            .lib-hero-cover { width: 108px; height: 108px; }
+            .lib-hero-name { font-size: 1.25rem; }
+            .browse-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 0.6rem; }
         }
 
         /* Playlist sidebar */

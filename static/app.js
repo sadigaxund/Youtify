@@ -3,6 +3,8 @@
             let videoDuration = 0;
             let currentVideoId = '';
             let currentSourceId = null;   // set for uploaded/cached sources; null for YouTube
+            let currentSourceLossless = false;  // true when the loaded source is lossless (for Auto -> FLAC)
+            let currentSrcLabel = 'YouTube';    // source format label for the Output panel
             let session_id = '';
             let isDragging = false;
             let playbackInterval = null;
@@ -116,9 +118,20 @@
                 addTagBtn: document.getElementById('addTagBtn'),
                 customTagsContainer: document.getElementById('customTagsContainer'),
                 delimiterInput: document.getElementById('delimiterInput'),
+                // Output & technical panel
+                techPanel: document.getElementById('techPanel'),
+                techToggle: document.getElementById('techToggle'),
+                techBody: document.getElementById('techBody'),
+                srcFmt: document.getElementById('srcFmt'),
+                fmtResolved: document.getElementById('fmtResolved'),
+                filenameCustomToggle: document.getElementById('filenameCustomToggle'),
+                filenameCustom: document.getElementById('filenameCustom'),
+                filenameEditBtn: document.getElementById('filenameEditBtn'),
+                filenameAutoBtn: document.getElementById('filenameAutoBtn'),
                 abList: document.getElementById('abList'),
                 abClear: document.getElementById('abClear'),
-                abGenerate: document.getElementById('abGenerate')
+                abGenerate: document.getElementById('abGenerate'),
+                genProgress: document.getElementById('genProgress')
             };
 
             // --- Utils ---
