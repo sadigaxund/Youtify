@@ -13,11 +13,12 @@
         rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
-        /* Global UI scale — bake in the zoom you'd otherwise apply by hand.
-           Desktop only (mobile is already tight; zoom there causes overflow).
-           Bump toward 1.3–1.5 (or 1.0 to disable) to taste. */
+        /* NOTE: a global CSS `zoom` makes position:sticky elements jitter while
+           scrolling (Chromium rounds sticky offsets in the zoomed space). Use the
+           browser's own zoom (Ctrl +/-) instead — it's smooth and per-site. Set a
+           value here only if you accept the scroll jitter. */
         @media (min-width: 768px) {
-            html { zoom: 1.25; }
+            html { zoom: 1; }
         }
 
         /* Never let anything cause horizontal scroll / right-edge gaps. */
@@ -51,14 +52,17 @@
                 radial-gradient(circle at 10% 20%, rgba(255, 0, 80, 0.1) 0%, transparent 40%),
                 radial-gradient(circle at 90% 80%, rgba(0, 163, 255, 0.1) 0%, transparent 40%);
             overflow-x: hidden;
+            padding-top: 58px;   /* clear the fixed top bar */
         }
 
         /* ---- App shell: sticky top bar + full-width, capped content ---- */
         .topbar {
-            position: sticky;
+            position: fixed;            /* fixed overlay (not sticky) — no per-frame reposition, no jitter */
             top: 0;
+            left: 0;
+            right: 0;
             z-index: 50;
-            background: rgba(12, 12, 20, 0.55);
+            background: rgba(12, 12, 20, 0.85);
             backdrop-filter: blur(20px);
             border-bottom: 1px solid var(--card-border);
         }
@@ -149,22 +153,12 @@
 
         /* Sticky action bar so Download/New (and progress) never scroll away */
         .action-bar {
-            position: sticky;
-            bottom: 0;
-            z-index: 20;
-            margin-top: 1rem;
-            padding: 1.2rem 0 0.4rem;
+            margin-top: 1.25rem;
+            padding-top: 1rem;
             display: flex;
             flex-direction: column;
             gap: 0.6rem;
-            /* Frosted glass: blur whatever gradient is actually behind it (no
-               solid fill to clash), with a soft masked top edge so there's no
-               visible boundary line. */
-            background: transparent;
-            backdrop-filter: blur(14px);
-            -webkit-backdrop-filter: blur(14px);
-            -webkit-mask-image: linear-gradient(to top, #000 72%, transparent);
-            mask-image: linear-gradient(to top, #000 72%, transparent);
+            border-top: 1px solid var(--card-border);
         }
 
         .action-buttons {
@@ -1591,8 +1585,7 @@
         .now-playing {
             width: 320px;
             flex-shrink: 0;
-            position: sticky;
-            top: 1.5rem;
+            align-self: flex-start;   /* never stretch to the track-list height */
             border: 1px solid var(--card-border);
             border-radius: 16px;
             background: rgba(255, 255, 255, 0.03);
@@ -1757,8 +1750,12 @@
                 position: fixed;
                 left: 0;
                 right: 0;
+                top: auto;            /* override desktop sticky top */
                 bottom: 0;
                 width: auto;
+                height: auto;
+                max-height: 76px;     /* hard cap — can't balloon to a full-height box */
+                overflow: hidden;
                 order: 0;
                 z-index: 60;
                 border: none;
@@ -1832,6 +1829,8 @@
             .now-playing.np-expanded {
                 top: 0;
                 height: 100%;
+                max-height: none;
+                overflow: auto;
                 padding: 1.5rem;
                 display: flex;
                 flex-direction: column;
