@@ -19,6 +19,25 @@
   <img src="https://github.com/user-attachments/assets/b8a1806b-53cc-4e0c-9c82-b9de0ce380be" alt="Youtify UI" width="45%" />
 </p>
 
+## Screenshots
+
+<!-- Drag each image into a GitHub issue/PR/release comment, then paste the
+     generated user-attachments URL in place of the REPLACE_* placeholders. -->
+<table>
+  <tr>
+    <td width="50%"><img src="REPLACE_URL_1" alt="Download — live preview & A/B compare"/><br/><sub><b>Download — live preview & A/B compare</b></sub></td>
+    <td width="50%"><img src="REPLACE_URL_2" alt="Library — playlists & now-playing"/><br/><sub><b>Library — playlists & now-playing</b></sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="REPLACE_URL_3" alt="Effects & metadata editor"/><br/><sub><b>Effects & metadata editor</b></sub></td>
+    <td width="50%"><img src="REPLACE_URL_4" alt="Mobile mini-bar + lock screen"/><br/><sub><b>Mobile mini-bar + lock-screen controls</b></sub></td>
+  </tr>
+</table>
+
+<details><summary>📸 More screenshots</summary>
+<br/>
+<img src="REPLACE_URL_5" width="100%" alt="Extra screenshot"/>
+</details>
 
 ## Features
 

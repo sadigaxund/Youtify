@@ -935,9 +935,15 @@ def download_to_cache(url: str, cache_dir: str, progress_cb: Optional[callable] 
             elif d['status'] == 'finished':
                 progress_cb(100.0)
 
-        # Download in M4A format (higher compatibility with FFmpeg/Pydub containers)
+        # Grab the highest-bitrate AUDIO-ONLY stream (usually ~160 kbps Opus/webm,
+        # which beats the ~129 kbps AAC/m4a). FFmpeg reads any of these, and we
+        # re-encode to MP3 once anyway, so don't lock the container/codec — let
+        # yt-dlp sort by bitrate. 'bestaudio*' is audio-only; the muxed 'best'
+        # fallback is last-resort only (videos with no audio-only format) — when
+        # it fires we still only read the audio stream during encode.
         ydl_opts = {
-            'format': 'bestaudio[ext=m4a]/bestaudio/best',
+            'format': 'bestaudio/bestaudio*/best',
+            'format_sort': ['abr', 'asr'],
             'outtmpl': os.path.join(cache_dir, '%(id)s.%(ext)s'),
             'quiet': True,
             'no_warnings': True,
