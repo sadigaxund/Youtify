@@ -4004,18 +4004,55 @@
                     cov.src = `/library/${it.id}/cover?v=${encodeURIComponent(it.updated_at || '')}`;
                     setMarquee($('npTitle'), it.title || it.filename || it.youtube_id);
                     setMarquee($('npArtist'), (it.artists || []).join(', '));
+                    updateMediaSession(it);
                     updateLibPlayIcons();
                 }
 
-                libAudio.addEventListener('play', updateLibPlayIcons);
-                libAudio.addEventListener('pause', updateLibPlayIcons);
+                // --- OS-level media metadata (MPRIS on Linux, lock screen on mobile) ---
+                function updateMediaSession(it) {
+                    if (!('mediaSession' in navigator)) return;
+                    const cover = `${location.origin}/library/${it.id}/cover?v=${encodeURIComponent(it.updated_at || '')}`;
+                    navigator.mediaSession.metadata = new MediaMetadata({
+                        title: it.title || it.filename || it.youtube_id,
+                        artist: (it.artists || []).join(', '),
+                        album: it.album || '',
+                        artwork: ['96x96', '256x256', '512x512'].map(s => ({ src: cover, sizes: s, type: 'image/jpeg' })),
+                    });
+                }
+                function updatePositionState() {
+                    if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) return;
+                    const d = libAudio.duration;
+                    if (!d || !isFinite(d)) return;
+                    try {
+                        navigator.mediaSession.setPositionState({
+                            duration: d,
+                            position: Math.min(libAudio.currentTime, d),
+                            playbackRate: libAudio.playbackRate || 1,
+                        });
+                    } catch (e) { /* ignore */ }
+                }
+                if ('mediaSession' in navigator) {
+                    const ms = navigator.mediaSession;
+                    const set = (a, fn) => { try { ms.setActionHandler(a, fn); } catch (e) { } };
+                    set('play', () => libAudio.play());
+                    set('pause', () => libAudio.pause());
+                    set('previoustrack', () => { if (libAudio.currentTime > 3) { libAudio.currentTime = 0; } else { stepTrack(-1); } });
+                    set('nexttrack', () => stepTrack(1));
+                    set('seekto', d => { if (d && d.seekTime != null) { libAudio.currentTime = d.seekTime; updatePositionState(); } });
+                    set('seekbackward', d => { libAudio.currentTime = Math.max(0, libAudio.currentTime - ((d && d.seekOffset) || 10)); });
+                    set('seekforward', d => { libAudio.currentTime = Math.min(libAudio.duration || 1e9, libAudio.currentTime + ((d && d.seekOffset) || 10)); });
+                }
+
+                libAudio.addEventListener('play', () => { updateLibPlayIcons(); if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing'; });
+                libAudio.addEventListener('pause', () => { updateLibPlayIcons(); if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused'; });
                 libAudio.addEventListener('ended', () => stepTrack(1));
                 libAudio.addEventListener('timeupdate', () => {
                     if (!libAudio.duration) return;
                     $('npSeek').value = String(Math.round(libAudio.currentTime / libAudio.duration * 1000));
                     $('npCur').textContent = fmtDur(libAudio.currentTime);
+                    updatePositionState();
                 });
-                libAudio.addEventListener('loadedmetadata', () => { $('npDur').textContent = fmtDur(libAudio.duration); });
+                libAudio.addEventListener('loadedmetadata', () => { $('npDur').textContent = fmtDur(libAudio.duration); updatePositionState(); });
 
                 function showView(name) {
                     $('downloadView').style.display = name === 'download' ? 'block' : 'none';

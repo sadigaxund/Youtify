@@ -1032,8 +1032,10 @@ def library_cover(audio_id: int):
     if not cover:
         raise HTTPException(status_code=404, detail="No cover")
     data, mime = cover
+    # URL is versioned with ?v=updated_at, so cache hard (avoids the Media
+    # Session artwork re-fetching the cover repeatedly during playback).
     return Response(content=data, media_type=mime,
-                    headers={"Cache-Control": "no-cache"})
+                    headers={"Cache-Control": "public, max-age=604800"})
 
 
 @app.get("/library/{audio_id}/audio")
@@ -1224,7 +1226,8 @@ def playlist_cover(pid: str):
     path = playlist_cover_path(pid)
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="No cover")
-    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-cache"})
+    return FileResponse(path, media_type="image/jpeg",
+                        headers={"Cache-Control": "public, max-age=604800"})
 
 
 @app.get("/suggestions")

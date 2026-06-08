@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Releases are cut by pushing a `vX.Y.Z` git tag, which builds and publishes the
 Docker image (`sakhund/youtify:<version>` + `:latest`).
 
-## [Unreleased]
+## [2.2.1] - 2026-06-08
 
 ### Added
 - **Autocomplete on all metadata** — Album, Year, Composer, and custom-tag **keys
@@ -20,20 +20,31 @@ Docker image (`sakhund/youtify:<version>` + `:latest`).
 - **Library is the default view** in server-save mode.
 - **Mobile library (Spotify-style)** — the sidebar collapses to a `source ▾`
   picker, the track list goes full-width, and now-playing becomes a fixed bottom
-  mini-bar (tap to expand to a full sheet).
-- **Global UI scale** — a desktop-only `zoom` (default 1.25, tunable) so the dense
-  UI is readable without manual browser zoom.
+  mini-bar (tap to expand to a full sheet, with a close button).
+- **OS media integration (Media Session API)** — the current library track's
+  title/artist/album + cover artwork are published to the OS, so it appears in
+  Linux desktop media widgets (MPRIS) and mobile lock-screen/notification
+  controls, with working play/pause/next/previous/seek. (Full controls on Android
+  need an HTTPS origin.)
+- **Per-track action menu** — the row's play/add/edit/delete buttons collapse into
+  a single `⋮` kebab so titles get the space.
 
 ### Changed
 - **Mixes** chips show effects as wrapping pill-tags instead of one bunched line.
 - **Library Effects editor** laid out as a 2-column grid (was a single long column).
-- **Download view compacted** — cover sits beside the metadata fields, and
-  Download/New + progress live in a sticky frosted action bar (always reachable);
-  the view is wider.
+- **Download view compacted** — cover sits beside the metadata fields; the view is
+  wider; Download/New + progress sit in their own action bar.
 - Filter/sort controls grouped into a single header band above the track list.
+- Now-playing panel is compact (cover capped) and no longer dominates the column.
 - Log lines + the startup banner/config box are colorized to match uvicorn.
 
 ### Fixed
+- **Scroll jitter** — removed `position: sticky` everywhere (it fought the scroll,
+  worse under CSS `zoom`): the top bar is a fixed overlay and the now-playing
+  panel / action bar are normal flow. The global `zoom` is off by default for the
+  same reason (use the browser's own zoom).
+- Cover endpoints are now cacheable (versioned URL), so the Media Session artwork
+  is no longer re-fetched every second during playback.
 - Combo switching no longer throws `416 Range Not Satisfiable` / interrupts —
   the resume seek waits for metadata and is clamped inside the file.
 - Datalist suggestions no longer re-open right after you pick one.
@@ -41,8 +52,6 @@ Docker image (`sakhund/youtify:<version>` + `:latest`).
   the player range header wraps; the now-playing mini-bar is a single row.
 - Playlist sidebar: track counts align across All Tracks and playlists; the
   hover edit/delete buttons no longer overlap the count; dynamic counts are live.
-- Sticky action bar is hidden before a search and blends with the gradient
-  (frosted) instead of showing a solid slab.
 
 ## [2.2.0] - 2026-06-07
 
