@@ -13,6 +13,19 @@
         rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
+        /* Global UI scale — bake in the zoom you'd otherwise apply by hand.
+           Desktop only (mobile is already tight; zoom there causes overflow).
+           Bump toward 1.3–1.5 (or 1.0 to disable) to taste. */
+        @media (min-width: 768px) {
+            html { zoom: 1.25; }
+        }
+
+        /* Never let anything cause horizontal scroll / right-edge gaps. */
+        html, body {
+            max-width: 100%;
+            overflow-x: hidden;
+        }
+
         :root {
             --primary: #ff0050;
             --primary-glow: rgba(255, 0, 80, 0.5);
@@ -107,8 +120,56 @@
 
         /* Download form stays comfortably readable, not stretched edge-to-edge */
         #downloadView {
-            max-width: 980px;
+            max-width: 1080px;
             margin: 0 auto;
+        }
+
+        /* Visual breathing room between the player and the option cards */
+        #optionsPanel {
+            margin-top: 1rem;
+        }
+
+        /* Metadata card: cover beside the fields (keeps the card short) */
+        .meta-top {
+            display: grid;
+            grid-template-columns: 132px 1fr;
+            gap: 0.9rem;
+            align-items: start;
+            margin-bottom: 0.6rem;
+        }
+
+        .meta-top .meta-cover,
+        .meta-top .meta-fields {
+            min-width: 0;
+        }
+
+        @media (max-width: 560px) {
+            .meta-top { grid-template-columns: 1fr; }
+        }
+
+        /* Sticky action bar so Download/New (and progress) never scroll away */
+        .action-bar {
+            position: sticky;
+            bottom: 0;
+            z-index: 20;
+            margin-top: 1rem;
+            padding: 1.2rem 0 0.4rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+            /* Frosted glass: blur whatever gradient is actually behind it (no
+               solid fill to clash), with a soft masked top edge so there's no
+               visible boundary line. */
+            background: transparent;
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            -webkit-mask-image: linear-gradient(to top, #000 72%, transparent);
+            mask-image: linear-gradient(to top, #000 72%, transparent);
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 0.75rem;
         }
 
         @keyframes fadeIn {
@@ -302,6 +363,7 @@
 
         .range-container {
             flex: 1;
+            min-width: 0;            /* allow shrinking below content width (mobile) */
             display: flex;
             flex-direction: column;
             gap: 0.5rem;
@@ -310,8 +372,10 @@
 
         .range-header {
             display: flex;
+            flex-wrap: wrap;          /* time + range inputs wrap on narrow screens */
             justify-content: space-between;
             align-items: center;
+            gap: 0.4rem;
             font-size: 0.75rem;
             color: var(--text-dim);
             font-family: 'Outfit', sans-serif;
@@ -320,6 +384,7 @@
 
         .range-inputs {
             display: flex;
+            flex-wrap: wrap;
             gap: 0.5rem;
         }
 
@@ -800,11 +865,25 @@
         .ab-chip .ab-label {
             flex: 1;
             min-width: 0;
-            font-size: 0.74rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.25rem;
+        }
+
+        .ab-chip .ab-tag {
+            font-size: 0.68rem;
+            line-height: 1;
+            padding: 0.18rem 0.4rem;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid var(--card-border);
             color: var(--text);
             white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+        }
+
+        .ab-chip.active .ab-tag {
+            background: rgba(255, 0, 80, 0.18);
+            border-color: rgba(255, 0, 80, 0.4);
         }
 
         .ab-chip .ab-act {
@@ -1155,10 +1234,13 @@
         }
 
         .pl-entry {
+            position: relative;
             display: flex;
             align-items: center;
             gap: 0.55rem;
-            padding: 0.4rem 0.5rem;
+            /* Reserve right space for the (absolute) action buttons so the track
+               count lines up across All Tracks and every playlist. */
+            padding: 0.4rem 2rem 0.4rem 0.5rem;
             border-radius: 8px;
             cursor: pointer;
         }
@@ -1187,20 +1269,41 @@
             text-overflow: ellipsis;
         }
 
-        .pl-entry .pl-count { font-size: 0.7rem; opacity: 0.5; }
+        .pl-entry .pl-count { font-size: 0.7rem; opacity: 0.5; transition: opacity 0.15s ease; }
 
-        .pl-entry .pl-del {
+        /* On hover the actions occupy the right slot, so fade the count out. */
+        .pl-entry:hover .pl-count { opacity: 0; }
+
+        .pl-actions {
+            position: absolute;
+            right: 0.35rem;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            gap: 0.1rem;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+
+        .pl-entry:hover .pl-actions { opacity: 1; }
+
+        .pl-act {
             width: auto;
+            height: auto;
             margin: 0;
-            padding: 0 0.2rem;
+            padding: 0.15rem 0.25rem;
             background: none;
             border: none;
             color: var(--text-dim);
-            opacity: 0;
             cursor: pointer;
+            display: flex;
+            align-items: center;
         }
 
-        .pl-entry:hover .pl-del { opacity: 0.7; }
+        .pl-act:hover { color: #fff; }
+
+        .pl-entry[draggable="true"] { cursor: grab; }
+        .pl-entry.dragging { opacity: 0.45; }
 
         .pl-new {
             width: 100%;
@@ -1351,12 +1454,33 @@
             text-overflow: ellipsis;
         }
 
+        /* Toolbar reads as a header band above the track list. */
+        .lib-toolbar {
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+            padding: 0.7rem 0.8rem;
+            margin-bottom: 0.85rem;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+        }
+
+        .lib-toolbar .lib-search,
+        .lib-toolbar .lib-controls,
+        .lib-toolbar .lib-chips {
+            margin: 0;
+        }
+
+        .lib-toolbar .lib-chips:empty {
+            display: none;
+        }
+
         .lib-search {
             width: 100%;
             padding: 0.55rem 0.75rem;
             font-size: 0.9rem;
             border-radius: 10px;
-            margin-bottom: 0.7rem;
         }
 
         .lib-controls {
@@ -1482,8 +1606,17 @@
             padding: 2rem 0;
         }
 
+        /* Show body vs empty via the has-track class (no inline display, so the
+           mobile mini-bar's flex layout isn't overridden). */
+        #npBody { display: none; }
+        .now-playing.has-track #npBody { display: block; }
+        .now-playing.has-track #npEmpty { display: none; }
+
         .np-cover {
+            display: block;
             width: 100%;
+            max-width: 168px;        /* keep the panel compact, not a giant 320px square */
+            margin: 0 auto;
             aspect-ratio: 1 / 1;
             border-radius: 12px;
             object-fit: cover;
@@ -1494,10 +1627,13 @@
         .np-title {
             font-weight: 700;
             font-size: 1rem;
-            margin-top: 0.8rem;
+            margin-top: 0.7rem;
             overflow: hidden;
             white-space: nowrap;
+            text-align: center;
         }
+
+        .np-close { display: none; }
 
         .np-artist {
             font-size: 0.82rem;
@@ -1565,15 +1701,187 @@
             border-color: transparent;
         }
 
+        /* Mobile-only playlist picker toggle (hidden on desktop) */
+        .pl-toggle {
+            display: none;
+        }
+
+        /* ---------------- Mobile library (Spotify-style) ---------------- */
         @media (max-width: 900px) {
             .lib-layout {
                 flex-direction: column;
+                align-items: stretch;   /* fill width (flex-start made .lib-main shrink → overflow) */
             }
 
-            .now-playing {
+            .lib-sidebar,
+            .lib-main {
                 width: 100%;
-                position: static;
-                order: -1;
+                min-width: 0;
+            }
+
+            /* Filter/sort each take a full row (the 280px min-width overflowed). */
+            .lib-ctl.filter,
+            .lib-ctl.sort {
+                flex: 1 1 100%;
+                min-width: 0;
+            }
+
+            /* Sidebar collapses to a 'source ▾' picker; tap to reveal the list. */
+            .pl-toggle {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                width: 100%;
+                margin: 0 0 0.6rem;
+                padding: 0.55rem 0.8rem;
+                font-size: 0.9rem;
+                font-weight: 600;
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid var(--card-border);
+                border-radius: 10px;
+            }
+
+            .lib-sidebar:not(.open) .pl-list,
+            .lib-sidebar:not(.open) .pl-new,
+            .lib-sidebar:not(.open) .pl-create {
+                display: none;
+            }
+
+            /* Leave room for the fixed mini-player at the bottom. */
+            .lib-main {
+                padding-bottom: 84px;
+            }
+
+            /* Now-playing becomes a fixed bottom mini-bar; tap to expand. */
+            .now-playing {
+                position: fixed;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                width: auto;
+                order: 0;
+                z-index: 60;
+                border: none;
+                border-top: 1px solid var(--card-border);
+                border-radius: 0;
+                background: rgba(15, 17, 21, 0.96);
+                backdrop-filter: blur(12px);
+                padding: 0.5rem 0.8rem;
+            }
+
+            .now-playing:not(.has-track) {
+                display: none;
+            }
+
+            #npEmpty {
+                display: none !important;
+            }
+
+            .now-playing.has-track #npBody {
+                display: flex;
+                align-items: center;
+                gap: 0.6rem;
+            }
+
+            .now-playing .np-cover {
+                width: 44px;
+                height: 44px;
+                aspect-ratio: auto;
+                margin: 0;
+                flex-shrink: 0;
+            }
+
+            .now-playing .np-title {
+                margin-top: 0;
+                font-size: 0.85rem;
+            }
+
+            .np-meta {
+                flex: 1;
+                min-width: 0;
+            }
+
+            /* Mini-bar text is left-aligned (desktop/expanded stay centered). */
+            .now-playing:not(.np-expanded) .np-title,
+            .now-playing:not(.np-expanded) .np-artist {
+                text-align: left;
+            }
+
+            .now-playing .np-seek,
+            .now-playing .np-time {
+                display: none;
+            }
+
+            .now-playing .np-controls {
+                margin-top: 0;
+                gap: 0.5rem;
+                flex-shrink: 0;
+            }
+
+            .now-playing .np-btn {
+                width: 38px;
+                height: 38px;
+            }
+
+            .now-playing .np-btn.np-play {
+                width: 44px;
+                height: 44px;
+            }
+
+            /* Expanded "sheet" when the mini-bar is tapped. */
+            .now-playing.np-expanded {
+                top: 0;
+                height: 100%;
+                padding: 1.5rem;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+            }
+
+            .now-playing.np-expanded #npBody {
+                flex-direction: column;
+                gap: 1rem;
+                text-align: center;
+            }
+
+            .now-playing.np-expanded .np-cover {
+                width: min(70vw, 320px);
+                height: auto;
+                aspect-ratio: 1 / 1;
+            }
+
+            .now-playing.np-expanded .np-title {
+                font-size: 1.2rem;
+            }
+
+            .now-playing.np-expanded .np-meta {
+                width: 100%;
+            }
+
+            .now-playing.np-expanded .np-seek,
+            .now-playing.np-expanded .np-time {
+                display: block;
+                width: 100%;
+            }
+
+            .now-playing.np-expanded .np-controls {
+                gap: 1.25rem;
+            }
+
+            .now-playing.np-expanded .np-close {
+                display: block;
+                position: absolute;
+                top: 1rem;
+                right: 1rem;
+                width: auto;
+                height: auto;
+                margin: 0;
+                padding: 0.3rem 0.6rem;
+                background: none;
+                border: none;
+                color: #fff;
+                font-size: 1.3rem;
+                line-height: 1;
             }
         }
 
@@ -1598,6 +1906,42 @@
 
         .edit-grid .edit-actions {
             grid-column: 1 / -1;
+        }
+
+        /* Library Effects tab: tidy 2-column grid of controls */
+        .fx-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.6rem 0.8rem;
+        }
+
+        .fx-field {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .fx-field label {
+            font-size: 0.7rem;
+            opacity: 0.7;
+        }
+
+        .fx-toggles {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin-top: 0.7rem;
+            font-size: 0.8rem;
+        }
+
+        .fx-toggles label {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+
+        @media (max-width: 520px) {
+            .fx-grid { grid-template-columns: 1fr; }
         }
 
         @media (max-width: 640px) {
@@ -1787,29 +2131,30 @@
                         </div>
                     </div>
 
-                    <!-- Cover Section (image with controls stacked beneath, at image width) -->
-                    <div style="display:flex; flex-direction:column; gap:0.5rem; align-items:center; margin-bottom:0.25rem;">
-                        <div style="position:relative; width:100%; max-width:200px;">
-                            <img id="metaThumb" src="" alt="Cover"
-                                style="width:100%; aspect-ratio:1/1; border-radius:12px; object-fit:cover; border:1px solid var(--card-border); display:block; background:rgba(255,255,255,0.03);">
-                            <input type="file" id="thumbUpload" accept="image/*" style="display:none;">
+                    <!-- Cover beside the fields to keep the card short -->
+                    <div class="meta-top">
+                        <div class="meta-cover">
+                            <div style="position:relative; width:100%;">
+                                <img id="metaThumb" src="" alt="Cover"
+                                    style="width:100%; aspect-ratio:1/1; border-radius:12px; object-fit:cover; border:1px solid var(--card-border); display:block; background:rgba(255,255,255,0.03);">
+                                <input type="file" id="thumbUpload" accept="image/*" style="display:none;">
+                            </div>
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.35rem; margin-top:0.4rem;">
+                                <button id="uploadThumbBtn" type="button"
+                                    style="width:100%; padding:0.35rem 0.3rem; font-size:0.68rem; border-radius:7px; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin:0;">
+                                    <i data-lucide="upload" style="width:11px; height:11px;"></i>
+                                    <span>Upload</span>
+                                </button>
+                                <button id="resetThumbBtn" type="button"
+                                    style="width:100%; padding:0.35rem 0.3rem; font-size:0.68rem; border-radius:7px; background:transparent; border:1px solid var(--card-border); margin:0;">
+                                    <i data-lucide="rotate-ccw" style="width:11px; height:11px;"></i>
+                                    <span>Reset</span>
+                                </button>
+                            </div>
                         </div>
-                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.4rem; width:100%; max-width:200px;">
-                            <button id="uploadThumbBtn" type="button"
-                                style="width:100%; padding:0.4rem 0.5rem; font-size:0.72rem; border-radius:8px; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin:0;">
-                                <i data-lucide="upload" style="width:12px; height:12px;"></i>
-                                <span>Upload</span>
-                            </button>
-                            <button id="resetThumbBtn" type="button"
-                                style="width:100%; padding:0.4rem 0.5rem; font-size:0.72rem; border-radius:8px; background:transparent; border:1px solid var(--card-border); margin:0;">
-                                <i data-lucide="rotate-ccw" style="width:12px; height:12px;"></i>
-                                <span>Reset</span>
-                            </button>
-                        </div>
-                    </div>
 
-                    <!-- Standard Metadata Fields -->
-                    <div class="audio-grid">
+                        <!-- Standard Metadata Fields -->
+                        <div class="audio-grid meta-fields">
                         <div class="grid-item" style="grid-column: 1 / -1;">
                             <label>Title</label>
                             <input type="text" id="metaTitle" placeholder="Track title..."
@@ -1852,7 +2197,8 @@
                             <input type="text" id="metaAlbum" placeholder="Album name..."
                                 style="padding:0.4rem 0.6rem; font-size:0.8rem; border-radius:8px;">
                         </div>
-                    </div>
+                        </div>
+                    </div> <!-- /meta-top -->
 
 
                     <!-- Custom Tags -->
@@ -1887,8 +2233,11 @@
 
                 </div>
 
-                <!-- Pipeline Progress (spans full width below both columns) -->
-                <div id="pipelineProgress" class="pipeline-progress" style="grid-column:1 / -1;">
+            </div> <!-- /optionsPanel -->
+
+            <!-- Sticky action bar: progress + Download/New always reachable -->
+            <div id="actionBar" class="action-bar" style="display:none;">
+                <div id="pipelineProgress" class="pipeline-progress">
                     <div class="pipeline-steps">
                         <div id="stepCache" class="pipeline-step">
                             <i data-lucide="download-cloud" class="step-icon" id="stepCacheIcon"></i>
@@ -1909,7 +2258,7 @@
                     </div>
                 </div>
 
-                <div style="display: flex; gap: 0.75rem; grid-column:1 / -1;">
+                <div class="action-buttons">
                     <button id="downloadBtn" style="flex:1">
                         <i data-lucide="download"></i>
                         <span>Download</span>
@@ -1941,10 +2290,12 @@
                 </div>
 
                 <div class="lib-layout">
-                    <aside class="lib-sidebar">
+                    <aside id="libSidebar" class="lib-sidebar">
+                        <button id="plToggle" type="button" class="pl-toggle">All Tracks <span>▾</span></button>
                         <div id="plList" class="pl-list"></div>
                         <button id="plNewBtn" type="button" class="pl-new">+ New playlist</button>
                         <div id="plCreate" class="pl-create" style="display:none;">
+                            <div id="plCreateTitle" style="font-size:0.8rem; font-weight:700; color:var(--text-dim);">New playlist</div>
                             <input type="text" id="plName" placeholder="Playlist name">
                             <div class="pl-kind">
                                 <button type="button" id="plKindManual" class="pl-kind-btn active">Manual</button>
@@ -1967,40 +2318,45 @@
                         </div>
                     </aside>
                     <div class="lib-main">
-                        <input type="text" id="libSearch" class="lib-search" placeholder="Search title, artist, genre…">
-                        <div class="lib-controls">
-                            <div class="lib-ctl filter">
-                                <span class="lib-ctl-label">Filter</span>
-                                <select id="libFilterField"></select>
-                                <input type="text" id="libFilterValue" placeholder="contains…">
-                                <button id="libAddFilter" type="button" class="lib-ctl-btn">+ Add</button>
+                        <div class="lib-toolbar">
+                            <input type="text" id="libSearch" class="lib-search" placeholder="Search title, artist, genre…">
+                            <div class="lib-controls">
+                                <div class="lib-ctl filter">
+                                    <span class="lib-ctl-label">Filter</span>
+                                    <select id="libFilterField"></select>
+                                    <input type="text" id="libFilterValue" placeholder="contains…">
+                                    <button id="libAddFilter" type="button" class="lib-ctl-btn">+ Add</button>
+                                </div>
+                                <div class="lib-ctl sort">
+                                    <span class="lib-ctl-label">Sort</span>
+                                    <select id="libSortField">
+                                        <option value="created_at">Date added</option>
+                                        <option value="title">Title</option>
+                                        <option value="artist">Artist</option>
+                                        <option value="album">Album</option>
+                                        <option value="year">Year</option>
+                                        <option value="duration">Duration</option>
+                                    </select>
+                                    <button id="libSortDir" type="button" class="lib-ctl-btn lib-ctl-icon" title="Sort direction">↓</button>
+                                </div>
                             </div>
-                            <div class="lib-ctl sort">
-                                <span class="lib-ctl-label">Sort</span>
-                                <select id="libSortField">
-                                    <option value="created_at">Date added</option>
-                                    <option value="title">Title</option>
-                                    <option value="artist">Artist</option>
-                                    <option value="album">Album</option>
-                                    <option value="year">Year</option>
-                                    <option value="duration">Duration</option>
-                                </select>
-                                <button id="libSortDir" type="button" class="lib-ctl-btn lib-ctl-icon" title="Sort direction">↓</button>
-                            </div>
+                            <div id="libChips" class="lib-chips"></div>
                         </div>
-                        <div id="libChips" class="lib-chips"></div>
                         <div id="libList"></div>
                         <p id="libEmpty" style="display:none; opacity:0.6; text-align:center; padding:2rem 0; font-size:0.85rem;">No tracks match.</p>
                     </div>
 
                     <aside id="nowPlaying" class="now-playing">
+                        <button id="npClose" type="button" class="np-close" title="Close">✕</button>
                         <div id="npEmpty" class="np-empty">Pick a track to play.</div>
-                        <div id="npBody" style="display:none;">
+                        <div id="npBody">
                             <img id="npCover" class="np-cover" alt="">
-                            <div id="npTitle" class="np-title"></div>
-                            <div id="npArtist" class="np-artist"></div>
-                            <input type="range" id="npSeek" class="np-seek" min="0" max="1000" value="0">
-                            <div class="np-time"><span id="npCur">0:00</span><span id="npDur">0:00</span></div>
+                            <div class="np-meta">
+                                <div id="npTitle" class="np-title"></div>
+                                <div id="npArtist" class="np-artist"></div>
+                                <input type="range" id="npSeek" class="np-seek" min="0" max="1000" value="0">
+                                <div class="np-time"><span id="npCur">0:00</span><span id="npDur">0:00</span></div>
+                            </div>
                             <div class="np-controls">
                                 <button id="npPrev" type="button" class="np-btn" title="Previous"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM20 6v12l-9-6z"/></svg></button>
                                 <button id="npPlay" type="button" class="np-btn np-play" title="Play/Pause"></button>
@@ -2335,6 +2691,33 @@
                 b64 => { customThumbnailBase64 = b64; }, () => originalThumbnailUrl);
 
             // --- Custom Tags (reusable across the download form + library editor) ---
+            // Generic library autocomplete via a native <datalist>. fieldOrFn is a
+            // /suggestions field name (or a function returning one at fetch time,
+            // used for custom-tag values keyed by the row's current key).
+            let _suggestSeq = 0;
+            function attachSuggest(input, fieldOrFn) {
+                const dl = document.createElement('datalist');
+                dl.id = 'dl' + (++_suggestSeq);
+                input.setAttribute('list', dl.id);
+                input.after(dl);
+                const run = debounce(async () => {
+                    const field = (typeof fieldOrFn === 'function') ? fieldOrFn() : fieldOrFn;
+                    if (!field) { dl.innerHTML = ''; return; }
+                    try {
+                        const res = await fetch(`/suggestions?field=${encodeURIComponent(field)}&q=${encodeURIComponent(input.value)}`);
+                        if (!res.ok) return;
+                        const cur = input.value.trim().toLowerCase();
+                        // Drop an exact match so the dropdown doesn't re-pop right
+                        // after the user picks/types that value.
+                        const list = ((await res.json()).suggestions || [])
+                            .filter(v => String(v).toLowerCase() !== cur);
+                        dl.innerHTML = list.map(v => `<option value="${String(v).replace(/"/g, '&quot;')}">`).join('');
+                    } catch (e) { /* offline -> no suggestions */ }
+                }, 150);
+                input.addEventListener('input', run);
+                input.addEventListener('focus', run);
+            }
+
             function addCustomTag(container, key = '', value = '') {
                 const row = document.createElement('div');
                 row.style.cssText = 'display:flex; gap:0.4rem; align-items:center;';
@@ -2349,8 +2732,19 @@
                     </button>
                 `;
                 container.appendChild(row);
+                const keyIn = row.querySelector('.custom-tag-key');
+                const valIn = row.querySelector('.custom-tag-value');
+                attachSuggest(keyIn, '__keys__');
+                attachSuggest(valIn, () => keyIn.value.trim());
             }
             els.addTagBtn.addEventListener('click', () => addCustomTag(els.customTagsContainer));
+
+            // Library-sourced autocomplete on the standard metadata fields.
+            attachSuggest(els.metaAlbum, 'album');
+            attachSuggest(els.metaYear, 'year');
+            attachSuggest(document.getElementById('libAlbum'), 'album');
+            attachSuggest(document.getElementById('libYear'), 'year');
+            attachSuggest(document.getElementById('libComposer'), 'composer');
 
             function getCustomTags(container) {
                 const tags = [];
@@ -2985,6 +3379,7 @@
 
                     els.preview.style.display = 'flex';
                     els.optionsPanel.style.display = 'grid';
+                    document.getElementById('actionBar').style.display = 'flex';
                     els.searchBtn.style.display = 'none';
                     // Collapse the queried URL — its value persists for /stream + /save.
                     els.inputGroup.style.display = 'none';
@@ -3252,16 +3647,17 @@
                 return [p.eq_preset || '', p.mbc_preset || '', p.enhance_mode || '', p.enhance_intensity,
                 !!p.normalize, p.normalize_i, !!p.original].join('|');
             }
-            function snapLabel(p) {
-                if (p.original) return 'Original (no FX)';
+            function snapParts(p) {
+                if (p.original) return ['Original'];
                 const lvl = { '1': 'Lo', '1.0': 'Lo', '1.5': 'Md', '2': 'Hi', '2.0': 'Hi' }[String(p.enhance_intensity)] || '';
                 const bits = [];
                 if (p.eq_preset) bits.push('EQ ' + p.eq_preset);
                 if (p.mbc_preset) bits.push('Cmp ' + p.mbc_preset);
                 if (p.enhance_mode) bits.push(p.enhance_mode + (lvl ? ' ' + lvl : ''));
                 if (p.normalize) bits.push('Norm ' + p.normalize_i);
-                return bits.length ? bits.join(' · ') : 'Dry (no FX)';
+                return bits.length ? bits : ['Dry'];
             }
+            function snapLabel(p) { return snapParts(p).join(' · '); }
             function recordSnapshot(p) {
                 const key = paramsKey(p);
                 let s = snapshots.find(x => paramsKey(x.params) === key);
@@ -3284,9 +3680,11 @@
                     const chip = document.createElement('div');
                     chip.className = 'ab-chip' + (s.id === activeSnapshotId ? ' active' : '');
                     chip.title = 'Load into controls & play';
+                    const pills = snapParts(s.params).map(t => `<span class="ab-tag">${t}</span>`).join('');
+                    chip.title = s.label;
                     chip.innerHTML = `
                         <span class="ab-play"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
-                        <span class="ab-label">${s.label}</span>
+                        <span class="ab-label">${pills}</span>
                         <button class="ab-act ab-del" title="Remove"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`;
                     // Clicking the chip now loads the combo into the controls AND plays it.
                     chip.addEventListener('click', (e) => { if (e.target.closest('.ab-act')) return; loadSnapshot(s.id); });
@@ -3539,6 +3937,7 @@
                 let createFilters = [];                 // dynamic-playlist builder chips
                 let createKind = 'manual';
                 let createCoverBase64 = null;
+                let editingPlaylistId = null;           // set while editing an existing playlist
 
                 const itemById = id => libItems.find(x => x.id === id);
 
@@ -3595,8 +3994,12 @@
                 }
                 function renderNowPlaying() {
                     const it = itemById(libPlayingId);
-                    if (!it) { $('npEmpty').style.display = 'block'; $('npBody').style.display = 'none'; return; }
-                    $('npEmpty').style.display = 'none'; $('npBody').style.display = 'block';
+                    const np = $('nowPlaying');
+                    if (!it) {
+                        np.classList.remove('has-track', 'np-expanded');   // hides body / mobile mini-bar
+                        return;
+                    }
+                    np.classList.add('has-track');
                     const cov = $('npCover');
                     cov.onerror = () => { cov.onerror = null; cov.src = PLACEHOLDER; };
                     cov.src = `/library/${it.id}/cover?v=${encodeURIComponent(it.updated_at || '')}`;
@@ -3748,33 +4151,11 @@
 
                         const actions = document.createElement('div');
                         actions.className = 'lib-actions';
-                        const play = document.createElement('button');
-                        play.type = 'button'; play.className = 'lib-btn lib-play'; play.title = 'Play'; play.dataset.id = it.id;
-                        play.innerHTML = ICON_PLAY;
-                        play.addEventListener('click', e => { e.stopPropagation(); libTogglePlay(it.id); });
-                        const addpl = document.createElement('button');
-                        addpl.type = 'button'; addpl.className = 'lib-btn'; addpl.title = 'Add to playlist';
-                        addpl.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>';
-                        addpl.addEventListener('click', e => { e.stopPropagation(); openPlaylistMenu(e.currentTarget, it.youtube_id); });
-                        const edit = document.createElement('button');
-                        edit.type = 'button'; edit.className = 'lib-btn'; edit.title = 'Edit';
-                        edit.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>';
-                        edit.addEventListener('click', e => { e.stopPropagation(); openEdit(it.id); });
-                        actions.append(play, addpl, edit);
-                        // In a manual playlist, offer remove-from-playlist; elsewhere, delete track.
-                        if (currentSource.type === 'playlist' && currentSource.kind !== 'dynamic') {
-                            const rm = document.createElement('button');
-                            rm.type = 'button'; rm.className = 'lib-btn lib-del'; rm.title = 'Remove from playlist';
-                            rm.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>';
-                            rm.addEventListener('click', e => { e.stopPropagation(); removeFromPlaylist(currentSource.id, it.youtube_id); });
-                            actions.append(rm);
-                        } else {
-                            const del = document.createElement('button');
-                            del.type = 'button'; del.className = 'lib-btn lib-del'; del.title = 'Delete';
-                            del.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
-                            del.addEventListener('click', e => { e.stopPropagation(); deleteItem(it.id, title); });
-                            actions.append(del);
-                        }
+                        const kebab = document.createElement('button');
+                        kebab.type = 'button'; kebab.className = 'lib-btn lib-kebab'; kebab.title = 'More';
+                        kebab.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>';
+                        kebab.addEventListener('click', e => { e.stopPropagation(); openRowMenu(e.currentTarget, it); });
+                        actions.append(kebab);
 
                         row.append(img, info, actions);
                         // Row body click plays (edit is its own button now).
@@ -3799,6 +4180,21 @@
                     } catch (e) { /* ignore */ }
                 }
 
+                let dragPid = null;
+                function reorderPlaylists(srcId, targetId) {
+                    if (!srcId || srcId === targetId) return;
+                    const from = libPlaylists.findIndex(p => p.id === srcId);
+                    const to = libPlaylists.findIndex(p => p.id === targetId);
+                    if (from < 0 || to < 0) return;
+                    const [moved] = libPlaylists.splice(from, 1);
+                    libPlaylists.splice(to, 0, moved);
+                    renderSidebar();
+                    fetch('/playlists/reorder', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ids: libPlaylists.map(p => p.id) }),
+                    }).catch(() => {});
+                }
+
                 function makeEntry(label, count, active, opts) {
                     const e = document.createElement('div');
                     e.className = 'pl-entry' + (active ? ' active' : '');
@@ -3815,13 +4211,36 @@
                     const nm = document.createElement('span'); nm.className = 'pl-name'; nm.textContent = label; nm.title = label;
                     const ct = document.createElement('span'); ct.className = 'pl-count'; ct.textContent = count;
                     e.append(thumb, nm, ct);
-                    if (opts.onDelete) {
-                        const d = document.createElement('button');
-                        d.className = 'pl-del'; d.type = 'button'; d.textContent = '×'; d.title = 'Delete playlist';
-                        d.addEventListener('click', ev => { ev.stopPropagation(); opts.onDelete(); });
-                        e.append(d);
+                    if (opts.onEdit || opts.onDelete) {
+                        const acts = document.createElement('div');
+                        acts.className = 'pl-actions';
+                        if (opts.onEdit) {
+                            const ed = document.createElement('button');
+                            ed.className = 'pl-act'; ed.type = 'button'; ed.title = 'Edit playlist';
+                            ed.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>';
+                            ed.addEventListener('click', ev => { ev.stopPropagation(); opts.onEdit(); });
+                            acts.append(ed);
+                        }
+                        if (opts.onDelete) {
+                            const d = document.createElement('button');
+                            d.className = 'pl-act'; d.type = 'button'; d.title = 'Delete playlist';
+                            d.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+                            d.addEventListener('click', ev => { ev.stopPropagation(); opts.onDelete(); });
+                            acts.append(d);
+                        }
+                        e.append(acts);
                     }
                     e.addEventListener('click', opts.onClick);
+                    // Drag-to-reorder (playlists only).
+                    if (opts.pid) {
+                        e.dataset.pid = opts.pid;
+                        e.draggable = true;
+                        e.title = 'Drag to reorder';
+                        e.addEventListener('dragstart', ev => { dragPid = opts.pid; e.classList.add('dragging'); ev.dataTransfer.effectAllowed = 'move'; });
+                        e.addEventListener('dragend', () => { e.classList.remove('dragging'); dragPid = null; });
+                        e.addEventListener('dragover', ev => { ev.preventDefault(); });
+                        e.addEventListener('drop', ev => { ev.preventDefault(); reorderPlaylists(dragPid, opts.pid); });
+                    }
                     return e;
                 }
 
@@ -3839,12 +4258,21 @@
                             icon: ICON_PL,
                             cover: p.has_cover ? `/playlists/${p.id}/cover?v=${encodeURIComponent(p.updated_at || '')}` : null,
                             onClick: () => setSource({ type: 'playlist', id: p.id, kind: p.kind }),
+                            onEdit: () => openEditPlaylist(p.id),
                             onDelete: () => deletePlaylist(p.id, p.name),
+                            pid: p.id,
                         }));
                     });
+                    // Mobile picker label = current source name.
+                    const active = currentSource.type === 'all'
+                        ? 'All Tracks'
+                        : (libPlaylists.find(p => p.id === currentSource.id)?.name
+                           || currentSource.name || 'Playlist');
+                    $('plToggle').innerHTML = `${active} <span>▾</span>`;
                 }
 
                 function setSource(src) {
+                    $('libSidebar').classList.remove('open');   // collapse the mobile picker
                     if (src.type === 'playlist') {
                         fetch('/playlists/' + src.id).then(r => r.json()).then(pl => {
                             currentSource = { type: 'playlist', ...pl };
@@ -3857,6 +4285,39 @@
                 }
 
                 function closePlaylistMenu() { const m = $('plMenu'); if (m) m.remove(); }
+
+                // Generic popup menu (reuses .pl-menu styling). items: [{label, fn, danger}]
+                function openMenu(anchor, items) {
+                    closePlaylistMenu();
+                    const menu = document.createElement('div'); menu.className = 'pl-menu'; menu.id = 'plMenu';
+                    items.forEach(it => {
+                        const b = document.createElement('button'); b.type = 'button'; b.textContent = it.label;
+                        if (it.danger) b.style.color = 'var(--primary)';
+                        b.addEventListener('click', () => { closePlaylistMenu(); it.fn(); });
+                        menu.appendChild(b);
+                    });
+                    document.body.appendChild(menu);
+                    const r = anchor.getBoundingClientRect();
+                    menu.style.top = (window.scrollY + r.bottom + 4) + 'px';
+                    menu.style.left = (window.scrollX + Math.min(r.left, window.innerWidth - 180)) + 'px';
+                    setTimeout(() => document.addEventListener('click', closePlaylistMenu, { once: true }), 0);
+                }
+
+                // Per-track kebab menu (collapses the row's actions).
+                function openRowMenu(anchor, it) {
+                    const playing = (it.id === libPlayingId && !libAudio.paused);
+                    const inManual = currentSource.type === 'playlist' && currentSource.kind !== 'dynamic';
+                    const title = it.title || it.filename || it.youtube_id;
+                    openMenu(anchor, [
+                        { label: playing ? 'Pause' : 'Play', fn: () => libTogglePlay(it.id) },
+                        { label: 'Add to playlist…', fn: () => openPlaylistMenu(anchor, it.youtube_id) },
+                        { label: 'Edit', fn: () => openEdit(it.id) },
+                        inManual
+                            ? { label: 'Remove from playlist', danger: true, fn: () => removeFromPlaylist(currentSource.id, it.youtube_id) }
+                            : { label: 'Delete', danger: true, fn: () => deleteItem(it.id, title) },
+                    ]);
+                }
+
                 function openPlaylistMenu(anchor, yid) {
                     closePlaylistMenu();
                     const menu = document.createElement('div'); menu.className = 'pl-menu'; menu.id = 'plMenu';
@@ -3915,32 +4376,62 @@
                         chip.append(label, x); c.appendChild(chip);
                     });
                 }
+                function setKind(kind) {
+                    createKind = kind;
+                    $('plKindManual').classList.toggle('active', kind === 'manual');
+                    $('plKindDynamic').classList.toggle('active', kind === 'dynamic');
+                    $('plDynBuilder').style.display = kind === 'dynamic' ? 'block' : 'none';
+                }
                 function openCreate() {
-                    createFilters = []; createKind = 'manual'; createCoverBase64 = null;
+                    editingPlaylistId = null;
+                    createFilters = []; createCoverBase64 = null;
                     $('plName').value = '';
-                    $('plKindManual').classList.add('active'); $('plKindDynamic').classList.remove('active');
-                    $('plDynBuilder').style.display = 'none';
+                    setKind('manual');
                     $('plCoverBtn').textContent = 'Cover image (optional)';
                     $('plFilterField').innerHTML = libFieldOptions()
                         .map(f => `<option value="${f}">${f.charAt(0).toUpperCase() + f.slice(1)}</option>`).join('');
+                    $('plCreateTitle').textContent = 'New playlist';
+                    $('plCreateSave').textContent = 'Create';
                     renderPlChips();
                     $('plCreate').style.display = 'flex';
+                    $('libSidebar').classList.add('open');
+                }
+                async function openEditPlaylist(pid) {
+                    try {
+                        const pl = await (await fetch('/playlists/' + pid)).json();
+                        editingPlaylistId = pid;
+                        createFilters = (pl.filters || []).slice();
+                        createCoverBase64 = null;
+                        $('plName').value = pl.name || '';
+                        setKind(pl.kind === 'dynamic' ? 'dynamic' : 'manual');
+                        $('plCoverBtn').textContent = pl.has_cover ? 'Change cover' : 'Cover image (optional)';
+                        $('plFilterField').innerHTML = libFieldOptions()
+                            .map(f => `<option value="${f}">${f.charAt(0).toUpperCase() + f.slice(1)}</option>`).join('');
+                        $('plCreateTitle').textContent = 'Edit playlist';
+                        $('plCreateSave').textContent = 'Save';
+                        renderPlChips();
+                        $('plCreate').style.display = 'flex';
+                        $('libSidebar').classList.add('open');
+                    } catch (e) { showError(e.message); }
                 }
                 async function saveCreate() {
                     const name = $('plName').value.trim();
                     if (!name) { showError('Name the playlist'); return; }
                     const body = { name, kind: createKind, filters: createKind === 'dynamic' ? createFilters : [] };
                     if (createCoverBase64) body.cover_base64 = createCoverBase64;
+                    const editing = editingPlaylistId;
                     try {
-                        const res = await fetch('/playlists', {
-                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        const res = await fetch(editing ? '/playlists/' + editing : '/playlists', {
+                            method: editing ? 'PATCH' : 'POST',
+                            headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(body),
                         });
-                        if (!res.ok) { showError('Create failed: ' + (await res.text())); return; }
+                        if (!res.ok) { showError('Save failed: ' + (await res.text())); return; }
                         const pl = await res.json();
+                        editingPlaylistId = null;
                         $('plCreate').style.display = 'none';
                         await loadPlaylists();
-                        setSource({ type: 'playlist', id: pl.id });
+                        setSource({ type: 'playlist', id: editing || pl.id });
                     } catch (e) { showError(e.message); }
                 }
 
@@ -3953,19 +4444,21 @@
 
                 function buildFxControls(eff) {
                     eff = eff || {};
-                    const sel = (id, opts) =>
-                        `<label style="font-size:0.7rem; opacity:0.7;">${opts.label}</label>
-                         <select id="${id}" class="styled-select-mini" style="width:100%;">${opts.html}</select>`;
+                    const field = (id, label, html) =>
+                        `<div class="fx-field"><label>${label}</label>
+                         <select id="${id}" class="styled-select-mini" style="width:100%;">${html}</select></div>`;
                     $('libFxControls').innerHTML =
-                        sel('libFxEq', { label: 'EQ preset', html: cloneOptions('eqPresetSelect', true) }) +
-                        sel('libFxMbc', { label: 'Compression', html: cloneOptions('mbcPresetSelect', true) }) +
-                        sel('libFxEnhance', { label: 'Enhance', html: cloneOptions('enhanceModeSelect', true) }) +
-                        sel('libFxIntensity', { label: 'Intensity', html: cloneOptions('enhanceIntensitySelect', false) }) +
-                        sel('libFxNormI', { label: 'Loudness (LUFS)', html: cloneOptions('normalizeISelect', false) }) +
-                        `<div style="display:flex; gap:1rem; margin-top:0.3rem; font-size:0.8rem;">
-                            <label style="display:flex; gap:0.3rem; align-items:center;"><input type="checkbox" id="libFxNorm"> Normalize</label>
-                            <label style="display:flex; gap:0.3rem; align-items:center;"><input type="checkbox" id="libFxTrim"> Trim silence</label>
-                            <label style="display:flex; gap:0.3rem; align-items:center;"><input type="checkbox" id="libFxOriginal"> Original</label>
+                        `<div class="fx-grid">` +
+                        field('libFxEq', 'EQ preset', cloneOptions('eqPresetSelect', true)) +
+                        field('libFxMbc', 'Compression', cloneOptions('mbcPresetSelect', true)) +
+                        field('libFxEnhance', 'Enhance', cloneOptions('enhanceModeSelect', true)) +
+                        field('libFxIntensity', 'Intensity', cloneOptions('enhanceIntensitySelect', false)) +
+                        field('libFxNormI', 'Loudness (LUFS)', cloneOptions('normalizeISelect', false)) +
+                        `</div>` +
+                        `<div class="fx-toggles">
+                            <label><input type="checkbox" id="libFxNorm"> Normalize</label>
+                            <label><input type="checkbox" id="libFxTrim"> Trim silence</label>
+                            <label><input type="checkbox" id="libFxOriginal"> Original</label>
                          </div>`;
                     if ($('libFxEq')) $('libFxEq').value = eff.eq_preset || '';
                     if ($('libFxMbc')) $('libFxMbc').value = eff.mbc_preset || '';
@@ -4099,19 +4592,24 @@
                 $('brandHome').addEventListener('click', () => showView('download'));
 
                 // Playlist create unit
+                // Mobile: toggle the playlist picker; tap the mini-player to expand.
+                $('plToggle').addEventListener('click', () => $('libSidebar').classList.toggle('open'));
+                $('npBody').addEventListener('click', (e) => {
+                    if (e.target.closest('.np-controls') || e.target.closest('.np-seek')) return;
+                    if (window.matchMedia('(max-width: 900px)').matches) {
+                        $('nowPlaying').classList.add('np-expanded');   // mini-bar -> full sheet
+                    }
+                });
+                $('npClose').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    $('nowPlaying').classList.remove('np-expanded');
+                });
+
                 $('plNewBtn').addEventListener('click', openCreate);
                 $('plCreateCancel').addEventListener('click', () => { $('plCreate').style.display = 'none'; });
                 $('plCreateSave').addEventListener('click', saveCreate);
-                $('plKindManual').addEventListener('click', () => {
-                    createKind = 'manual';
-                    $('plKindManual').classList.add('active'); $('plKindDynamic').classList.remove('active');
-                    $('plDynBuilder').style.display = 'none';
-                });
-                $('plKindDynamic').addEventListener('click', () => {
-                    createKind = 'dynamic';
-                    $('plKindDynamic').classList.add('active'); $('plKindManual').classList.remove('active');
-                    $('plDynBuilder').style.display = 'block';
-                });
+                $('plKindManual').addEventListener('click', () => setKind('manual'));
+                $('plKindDynamic').addEventListener('click', () => setKind('dynamic'));
                 $('plAddFilter').addEventListener('click', () => {
                     const field = $('plFilterField').value, value = $('plFilterValue').value.trim();
                     if (!field || !value) return;
@@ -4183,6 +4681,10 @@
                 fetch('/config').then(r => r.json()).then(cfg => {
                     if (cfg && cfg.browser_download_mode === false) {
                         $('navLibrary').style.display = '';
+                        // Library is the default landing in server-save mode.
+                        showView('library');
+                        loadLibrary();
+                        loadPlaylists();
                     }
                 }).catch(() => {});
             })();

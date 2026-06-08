@@ -113,10 +113,16 @@ class AudioMetadataDB:
                     filters_json TEXT,
                     sort_json TEXT,
                     has_cover INTEGER DEFAULT 0,
+                    position INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            # Add `position` to pre-existing DBs (no-op if already present).
+            try:
+                conn.execute("ALTER TABLE playlists ADD COLUMN position INTEGER DEFAULT 0")
+            except Exception:
+                pass
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS playlist_tracks (
                     playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
@@ -291,6 +297,74 @@ class AudioMetadataDB:
                 (kind, limit)).fetchall()
             return [r["value"] for r in rows]
 
+    @staticmethod
+    def _prefix_then_contains(conn, sql, params_for, q, limit):
+        """Run a value query prefix-first then contains, deduped (ci)."""
+        esc = q.replace("%", r"\%").replace("_", r"\_")
+        out, seen = [], set()
+        for pat in (esc + "%", "%" + esc + "%"):
+            if len(out) >= limit:
+                break
+            for r in conn.execute(sql, params_for(pat, limit)).fetchall():
+                if r[0] is None:
+                    continue
+                v = str(r[0])
+                if v and v.lower() not in seen:
+                    seen.add(v.lower()); out.append(v)
+                if len(out) >= limit:
+                    break
+        return out[:limit]
+
+    def suggest_values(self, field: str, q: str = "", limit: int = 10) -> List[str]:
+        """
+        Distinct value suggestions for a metadata field:
+          album / year       -> audio_files
+          composer / <key>   -> metadata_fields (by field_name)
+        """
+        q = (q or "").strip()
+        with self.get_connection() as conn:
+            if field in ("album", "year"):
+                col = field
+                if not q:
+                    rows = conn.execute(
+                        f"SELECT DISTINCT {col} AS v FROM audio_files "
+                        f"WHERE {col} IS NOT NULL AND {col} <> '' ORDER BY {col} LIMIT ?",
+                        (limit,)).fetchall()
+                    return [str(r["v"]) for r in rows]
+                return self._prefix_then_contains(
+                    conn,
+                    f"SELECT DISTINCT {col} FROM audio_files "
+                    f"WHERE {col} IS NOT NULL AND CAST({col} AS TEXT) LIKE ? ESCAPE '\\' ORDER BY {col} LIMIT ?",
+                    lambda pat, lim: (pat, lim), q, limit)
+
+            key = "Composer" if field == "composer" else field
+            if not q:
+                rows = conn.execute(
+                    "SELECT DISTINCT field_value AS v FROM metadata_fields "
+                    "WHERE field_name=? AND field_value <> '' ORDER BY field_value LIMIT ?",
+                    (key, limit)).fetchall()
+                return [r["v"] for r in rows]
+            return self._prefix_then_contains(
+                conn,
+                "SELECT DISTINCT field_value FROM metadata_fields "
+                "WHERE field_name=? AND field_value LIKE ? ESCAPE '\\' ORDER BY field_value LIMIT ?",
+                lambda pat, lim: (key, pat, lim), q, limit)
+
+    def suggest_custom_keys(self, q: str = "", limit: int = 20) -> List[str]:
+        """Distinct custom-tag key names (for the key input autocomplete)."""
+        q = (q or "").strip()
+        with self.get_connection() as conn:
+            if not q:
+                rows = conn.execute(
+                    "SELECT DISTINCT field_name AS v FROM metadata_fields ORDER BY field_name LIMIT ?",
+                    (limit,)).fetchall()
+                return [r["v"] for r in rows]
+            return self._prefix_then_contains(
+                conn,
+                "SELECT DISTINCT field_name FROM metadata_fields "
+                "WHERE field_name LIKE ? ESCAPE '\\' ORDER BY field_name LIMIT ?",
+                lambda pat, lim: (pat, lim), q, limit)
+
     # -------------------------------------------------------------- rebuilding
 
     def rebuild_from_sidecars(self, meta_dir: str, save_dir: str) -> int:
@@ -327,15 +401,17 @@ class AudioMetadataDB:
     # -------------------------------------------------------------- playlists
 
     def upsert_playlist(self, *, id, name, kind="manual", filters=None, sort=None,
-                        has_cover=False, track_ids=None):
+                        has_cover=False, track_ids=None, position=0):
         with self.get_connection() as conn:
             conn.execute('''
-                INSERT INTO playlists (id, name, kind, filters_json, sort_json, has_cover, updated_at)
-                VALUES (?,?,?,?,?,?, CURRENT_TIMESTAMP)
+                INSERT INTO playlists (id, name, kind, filters_json, sort_json, has_cover, position, updated_at)
+                VALUES (?,?,?,?,?,?,?, CURRENT_TIMESTAMP)
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name, kind=excluded.kind, filters_json=excluded.filters_json,
-                    sort_json=excluded.sort_json, has_cover=excluded.has_cover, updated_at=CURRENT_TIMESTAMP
-            ''', (id, name, kind, json.dumps(filters or []), json.dumps(sort or {}), 1 if has_cover else 0))
+                    sort_json=excluded.sort_json, has_cover=excluded.has_cover,
+                    position=excluded.position, updated_at=CURRENT_TIMESTAMP
+            ''', (id, name, kind, json.dumps(filters or []), json.dumps(sort or {}),
+                  1 if has_cover else 0, int(position or 0)))
             if track_ids is not None:
                 conn.execute("DELETE FROM playlist_tracks WHERE playlist_id=?", (id,))
                 for pos, yid in enumerate(track_ids):
@@ -344,7 +420,8 @@ class AudioMetadataDB:
 
     def list_playlists(self) -> List[dict]:
         with self.get_connection() as conn:
-            rows = conn.execute("SELECT * FROM playlists ORDER BY name COLLATE NOCASE").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM playlists ORDER BY position, name COLLATE NOCASE").fetchall()
             counts = {}
             for r in conn.execute("SELECT playlist_id, COUNT(*) c FROM playlist_tracks GROUP BY playlist_id"):
                 counts[r["playlist_id"]] = r["c"]
@@ -387,7 +464,8 @@ class AudioMetadataDB:
                 self.upsert_playlist(
                     id=pl["id"], name=pl.get("name", "Untitled"), kind=pl.get("kind", "manual"),
                     filters=pl.get("filters", []), sort=pl.get("sort", {}),
-                    has_cover=pl.get("has_cover", False), track_ids=pl.get("track_ids", []))
+                    has_cover=pl.get("has_cover", False), track_ids=pl.get("track_ids", []),
+                    position=pl.get("position", 0))
                 count += 1
             except Exception as e:
                 print(f"Warning: failed to index playlist {path}: {e}")

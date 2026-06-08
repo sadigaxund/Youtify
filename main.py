@@ -1083,18 +1083,37 @@ def clear_preview_cache(url: Optional[str] = Query(None)):
 # .youtify/playlists/ so they survive a DB rebuild; the DB is just the index.
 # ---------------------------------------------------------------------------
 
-def _save_playlist(pid, *, name, kind, filters, sort, track_ids, has_cover):
-    """Write the sidecar + upsert the DB index together."""
+def _save_playlist(pid, *, name, kind, filters, sort, track_ids, has_cover, position=None):
+    """Write the sidecar + upsert the DB index together. Position is preserved
+    unless explicitly given (new playlists append at the end)."""
+    if position is None:
+        existing = db.get_playlist(pid)
+        position = existing["position"] if existing else len(db.list_playlists())
     data = {
         "id": pid, "name": name, "kind": kind,
         "filters": filters or [], "sort": sort or {},
         "track_ids": track_ids or [], "has_cover": bool(has_cover),
+        "position": position,
         "updated_at": datetime.datetime.now().isoformat(),
     }
     write_playlist_sidecar(pid, data)
     db.upsert_playlist(id=pid, name=name, kind=kind, filters=filters, sort=sort,
-                       has_cover=has_cover, track_ids=track_ids)
+                       has_cover=has_cover, track_ids=track_ids, position=position)
     return data
+
+
+@app.post("/playlists/reorder")
+def playlists_reorder(payload: dict = Body(...)):
+    _require_library()
+    ids = payload.get("ids") or []
+    for i, pid in enumerate(ids):
+        pl = db.get_playlist(pid)
+        if not pl:
+            continue
+        _save_playlist(pid, name=pl["name"], kind=pl["kind"], filters=pl["filters"],
+                       sort=pl["sort"], track_ids=pl["track_ids"], has_cover=pl["has_cover"],
+                       position=i)
+    return {"ok": True}
 
 
 @app.get("/playlists")
@@ -1209,11 +1228,21 @@ def playlist_cover(pid: str):
 
 
 @app.get("/suggestions")
-def suggestions(kind: str = Query(...), q: str = Query("")):
-    """Artist/genre autocomplete sourced from previously saved tags."""
-    if kind not in ("artist", "genre"):
-        raise HTTPException(status_code=422, detail="kind must be 'artist' or 'genre'")
-    return {"suggestions": db.suggest_tags(kind, q)}
+def suggestions(kind: Optional[str] = Query(None), field: Optional[str] = Query(None),
+                q: str = Query("")):
+    """
+    Autocomplete sourced from the library.
+      kind=artist|genre              -> normalized tags
+      field=album|year|composer|<k>  -> distinct values for that field/custom key
+      field=__keys__                 -> distinct custom-tag key names
+    """
+    if kind in ("artist", "genre"):
+        return {"suggestions": db.suggest_tags(kind, q)}
+    if field == "__keys__":
+        return {"suggestions": db.suggest_custom_keys(q)}
+    if field:
+        return {"suggestions": db.suggest_values(field, q)}
+    raise HTTPException(status_code=422, detail="provide kind=artist|genre or field=<name>")
 
 
 if __name__ == "__main__":

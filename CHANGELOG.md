@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Releases are cut by pushing a `vX.Y.Z` git tag, which builds and publishes the
 Docker image (`sakhund/youtify:<version>` + `:latest`).
 
+## [Unreleased]
+
+### Added
+- **Autocomplete on all metadata** — Album, Year, Composer, and custom-tag **keys
+  and values** now suggest from the library (generalized `GET /suggestions?field=`),
+  via native datalists on the download form and the library editor.
+- **Edit playlists** — change a playlist's name, cover, kind, and (dynamic) filters
+  from the sidebar pencil button (`PATCH /playlists/{id}`).
+- **Reorder playlists** — drag sidebar entries to reorder; order persists
+  (`POST /playlists/reorder` + a `position` field in the DB/sidecars).
+- **Library is the default view** in server-save mode.
+- **Mobile library (Spotify-style)** — the sidebar collapses to a `source ▾`
+  picker, the track list goes full-width, and now-playing becomes a fixed bottom
+  mini-bar (tap to expand to a full sheet).
+- **Global UI scale** — a desktop-only `zoom` (default 1.25, tunable) so the dense
+  UI is readable without manual browser zoom.
+
+### Changed
+- **Mixes** chips show effects as wrapping pill-tags instead of one bunched line.
+- **Library Effects editor** laid out as a 2-column grid (was a single long column).
+- **Download view compacted** — cover sits beside the metadata fields, and
+  Download/New + progress live in a sticky frosted action bar (always reachable);
+  the view is wider.
+- Filter/sort controls grouped into a single header band above the track list.
+- Log lines + the startup banner/config box are colorized to match uvicorn.
+
+### Fixed
+- Combo switching no longer throws `416 Range Not Satisfiable` / interrupts —
+  the resume seek waits for metadata and is clamped inside the file.
+- Datalist suggestions no longer re-open right after you pick one.
+- Mobile: horizontal overflow (player + library) — content now fills the viewport;
+  the player range header wraps; the now-playing mini-bar is a single row.
+- Playlist sidebar: track counts align across All Tracks and playlists; the
+  hover edit/delete buttons no longer overlap the count; dynamic counts are live.
+- Sticky action bar is hidden before a search and blends with the gradient
+  (frosted) instead of showing a solid slab.
+
 ## [2.2.0] - 2026-06-07
 
 ### Added
@@ -111,6 +148,7 @@ Docker image (`sakhund/youtify:<version>` + `:latest`).
   normalization, enhancement modes, range select, live seekable preview, and
   ID3 + cover-art metadata embedding.
 
+[Unreleased]: https://github.com/sakhund/youtify/compare/v2.2.0...HEAD
 [2.2.0]: https://github.com/sakhund/youtify/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/sakhund/youtify/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/sakhund/youtify/compare/v1.0.0...v2.0.0
