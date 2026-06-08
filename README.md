@@ -56,6 +56,8 @@
 ### Preview & compare
 - **Seekable live preview** — plays the full track with your effects applied; drag the playhead anywhere and it maps 1:1 to the timeline.
 - **A/B compare** — every combo you preview is saved as a chip. Flip between them instantly (each render is cached per effect-set) to compare, without disturbing your current controls. Load any snapshot back into the controls in one click.
+- **Lossless preview** — previews are rendered to lossless FLAC, so what you audition is *higher* quality than the final MP3, with no extra lossy stage. (The download/export is a single-pass 320 kbps MP3.)
+- **⚡ Turbo Render** (opt-in) — caches the preview pipeline in stages so re-rendering similar combos is faster. See [Turbo Render](#turbo-render-faster-previews) below.
 - **Real-time progress** — separate live bars for caching (download) and processing (FFmpeg), instead of a single "done" flip.
 
 ### Metadata
@@ -74,6 +76,11 @@
 - A small **SQLite index** (`metadata.db`) powers the library and tag suggestions; it lives in the cache directory and is rebuilt from the sidecars on startup.
 - **Mobile-friendly** — Spotify-style layout: collapsible source picker, full-width track list, fixed bottom mini-bar that expands to a full sheet.
 
+### Sources & export
+- **Two sources** — paste a YouTube URL/search, **or drop a local audio file** into the download view. Uploaded files have their embedded tags + cover auto-read to pre-fill the editor.
+- **Selectable export format** — **Auto** / MP3 320 / FLAC / WAV. *Auto* keeps the source's quality: a lossless source (e.g. an uploaded FLAC) exports as FLAC, a lossy one (YouTube) as MP3 320. Tags + cover are embedded in every format (ID3 for MP3/WAV, Vorbis comments for FLAC).
+- **Batch generate** — open **⊞ Generate** to pick sets of EQ / compression / enhance / loudness values and drop every combination into the A/B "Mixes" list at once; each renders on click.
+
 ### Deployment
 - **Browser Download** (default): process and download straight to your device.
 - **Server Save**: mount a volume and write files directly to your server library (e.g. Jellyfin / Nextcloud).
@@ -82,7 +89,17 @@
 
 ## How it works
 
-`Search` caches the best audio stream once. Both the **preview** and the final **export** build their FFmpeg filter graph from the *same* shared chain over that cache, so what you hear is what you get. The preview plays the full track with effects only (seekable, cached per effect-set); time-range and silence cuts are applied only on export, in a single 320 kbps encode.
+`Search` caches the best audio stream once. Both the **preview** and the final **export** build their FFmpeg filter graph from the *same* shared chain over that cache, so what you hear is what you get. The preview plays the full track with effects only (seekable, lossless FLAC, cached per effect-set); time-range and silence cuts are applied only on export, in a single encode to your chosen format (MP3 320 / FLAC / WAV / Auto).
+
+### Turbo Render (faster previews)
+
+The preview effect chain runs in order: **EQ → compression → enhance → loudness**. Rendering a brand-new combo from scratch re-decodes the source and runs every stage. **Turbo Render** (opt-in) trades disk for speed: it caches **lossless WAV checkpoints** — one for the decoded source, then one per *cumulative prefix* (`+EQ`, `+EQ+comp`, `+EQ+comp+enhance`) under `<cache>/work/ckpt/`. A new combo that shares a prefix with an earlier render resumes from the deepest matching checkpoint instead of recomputing those stages — so, for example, nudging just the enhance intensity reuses the cached base+EQ+compression and only re-runs enhance + loudness.
+
+Because every intermediate is lossless and there's still exactly one lossless final encode, **preview quality is identical** — Turbo only changes *how fast* a render is produced, never how it sounds. Loudness is the last stage and is followed only by the encode, so it isn't checkpointed (that would just duplicate the per-combo output cache).
+
+It's **off by default**. Enable per-session with the toggle in the effects panel, or change the default with the `--turbo` flag / `TURBO_PREVIEW=1` env var. Checkpoints (and stale preview renders) for other videos are cleared on each new search, and the checkpoint store is LRU-pruned, so disk use stays bounded.
+
+> **Note:** Turbo speeds up *re-rendering* combos that share a prefix. The first render of a brand-new track still pays full cost, and loudness normalization (which must run for every distinct combo) is the dominant cost regardless — so the win is biggest while A/B-ing many variations of the same track.
 
 ## Installation
 
@@ -119,6 +136,7 @@ Server starts at `http://localhost:8000`.
 |------|---------|---------|---------|
 | `--save-dir` | `SAVE_DIRECTORY` | _(unset → browser download)_ | Media library + `.youtify/` archive |
 | `--cache-dir` | `CACHE_DIRECTORY` | `~/.cache/youtify` | Working cache (previews/downloads) + `metadata.db` |
+| `--turbo` | `TURBO_PREVIEW` | _off_ | Default [Turbo Render](#turbo-render-faster-previews) ON (checkpoint cache; users can still toggle per-session) |
 
 `LOG_LEVEL` (default `INFO`) controls log verbosity.
 

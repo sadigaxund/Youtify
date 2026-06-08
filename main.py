@@ -61,7 +61,7 @@ def print_startup_banner(*, mode, save_dir, originals_dir, cache_root, host_url,
     if warning:
         log.warning(warning)
 
-from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Body, Response
+from fastapi import FastAPI, HTTPException, Query, BackgroundTasks, Body, Response, UploadFile, File
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -99,7 +99,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Youtify",
     description="High-quality YouTube Audio Downloader",
-    version="2.2.0",
+    version="2.2.2",
     lifespan=lifespan,
 )
 
@@ -127,14 +127,19 @@ def get_config():
     parser = argparse.ArgumentParser(description="YT2MP3 Backend Server")
     parser.add_argument("--save-dir", type=str, help="Directory to save MP3 files")
     parser.add_argument("--cache-dir", type=str, help="Working cache + DB directory")
+    parser.add_argument("--turbo", action="store_true",
+                        help="Default Turbo Render ON: cache lossless WAV checkpoints "
+                             "to speed up re-rendering preview combos (uses disk).")
     args, unknown = parser.parse_known_args()
 
     save_dir = args.save_dir or os.getenv("SAVE_DIRECTORY")
     cache_dir = (args.cache_dir or os.getenv("CACHE_DIRECTORY")
                  or os.path.expanduser("~/.cache/youtify"))
-    return save_dir, cache_dir
+    # Turbo default: CLI flag OR truthy env. Off unless explicitly enabled.
+    turbo = args.turbo or os.getenv("TURBO_PREVIEW", "").strip().lower() in ("1", "true", "yes", "on")
+    return save_dir, cache_dir, turbo
 
-ENV_SAVE_DIR, ENV_CACHE_DIR = get_config()
+ENV_SAVE_DIR, ENV_CACHE_DIR, TURBO_DEFAULT = get_config()
 
 # Cache root (SSD): working files under work/, DB at the root so cleanup_cache
 # (which only scans work/) can never touch it.
@@ -196,14 +201,41 @@ def cleanup_cache():
     Removes cached files older than 2 hours to prevent disk bloat.
     Runs periodically as a background task.
     """
-    try:
-        now = datetime.datetime.now()
-        for f in os.listdir(CACHE_DIR):
-            fpath = os.path.join(CACHE_DIR, f)
-            if os.path.getmtime(fpath) < (now - datetime.timedelta(hours=2)).timestamp():
+    cutoff = (datetime.datetime.now() - datetime.timedelta(hours=2)).timestamp()
+    for f in os.listdir(CACHE_DIR):
+        fpath = os.path.join(CACHE_DIR, f)
+        # Skip directories (e.g. the ckpt/ checkpoint store) — os.remove() on a
+        # dir raises and used to abort the whole sweep. ckpt is size-managed by
+        # prune_checkpoints + cleared per-video on a new search.
+        if not os.path.isfile(fpath):
+            continue
+        try:
+            if os.path.getmtime(fpath) < cutoff:
                 os.remove(fpath)
+        except OSError as e:
+            log.warning("Cache cleanup error on %s: %s", f, e)
+
+
+def clear_other_video_cache(keep_video_id: str):
+    """
+    On a new search, drop preview renders (prev_*.mp3) and WAV checkpoints that
+    belong to OTHER videos, so the cache stays focused on the current track. The
+    current video's checkpoints are kept, so re-previewing it stays fast.
+    """
+    import glob
+    try:
+        ckpt_dir = os.path.join(CACHE_DIR, "ckpt")
+        targets = (glob.glob(os.path.join(CACHE_DIR, "prev_*"))
+                   + glob.glob(os.path.join(ckpt_dir, "*.wav")))
+        for f in targets:
+            if keep_video_id and keep_video_id in os.path.basename(f):
+                continue
+            try:
+                os.remove(f)
+            except OSError:
+                pass
     except Exception as e:
-        log.warning("Cache cleanup error: %s", e)
+        log.warning("clear_other_video_cache error: %s", e)
 
 
 def cleanup_session(session_id: str):
@@ -243,9 +275,9 @@ def split_multi(value: Optional[str], delimiter: str = "|") -> list:
     return [v.strip() for v in value.split(delimiter) if v.strip()]
 
 
-def build_filename(title, album, artist, composer, delimiter="|") -> str:
+def build_filename(title, album, artist, composer, delimiter="|", ext="mp3") -> str:
     """
-    Build the library filename: "Title (Album) - Artist (Composer).mp3".
+    Build the library filename: "Title (Album) - Artist (Composer).<ext>".
     Shared by /save and the library metadata editor so renames stay consistent.
     """
     title = sanitize(title) or "audio"
@@ -261,7 +293,24 @@ def build_filename(title, album, artist, composer, delimiter="|") -> str:
         if composer:
             right = f"{right} ({composer})" if right else composer
         parts.append(right)
-    return " - ".join(parts) + ".mp3"
+    return " - ".join(parts) + "." + ext.lstrip(".")
+
+
+def resolve_source(url: Optional[str], source_id: Optional[str]):
+    """
+    Resolve an input to (video_id, source_path). For an upload/cached source
+    (source_id set) returns the cached file path; for a YouTube url returns
+    (video_id, None) and the caller downloads as usual.
+    """
+    from youtube_downloader import find_cache_file
+    if source_id:
+        path = find_cache_file(CACHE_DIR, source_id)
+        if not path:
+            raise HTTPException(status_code=404, detail="Uploaded source not found (cache may have been cleared — re-upload).")
+        return source_id, path
+    if not url:
+        raise HTTPException(status_code=400, detail="Provide a YouTube url or a source_id.")
+    return validate_youtube_url(url), None
 
 
 def sidecar_path_for(video_id: str) -> str:
@@ -359,7 +408,8 @@ async def get_config_endpoint():
     """Get server configuration - tells frontend if browser download mode is enabled"""
     return {
         "browser_download_mode": BROWSER_DOWNLOAD_MODE,
-        "save_directory": DOWNLOAD_DIR
+        "save_directory": DOWNLOAD_DIR,
+        "turbo_default": TURBO_DEFAULT,
     }
 
 @app.get("/info")
@@ -374,10 +424,10 @@ def video_info(url: str = Query(..., description="The YouTube URL")):
 
 @app.get("/yt-search")
 def yt_search(q: str = Query(..., description="Free-text search query")):
-    """Search YouTube and return up to 10 pickable results (for non-URL input)."""
+    """Search YouTube and return up to 30 pickable results (for non-URL input)."""
     from youtube_downloader import search_youtube
     try:
-        return {"results": search_youtube(q, 10)}
+        return {"results": search_youtube(q, 30)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
@@ -412,6 +462,9 @@ def search_video(
         # /save can reuse it (the only gate is whether we *stream* a preview).
         background_tasks.add_task(precache_with_progress, url)
 
+        # New search -> clear other videos' preview renders + checkpoints (keeps
+        # this video's, so re-previewing it stays fast).
+        background_tasks.add_task(clear_other_video_cache, video_id)
         background_tasks.add_task(cleanup_cache)
         
         # Pass upload_date to frontend for year pre-population
@@ -433,10 +486,74 @@ def search_video(
         raise HTTPException(status_code=500, detail=f"Search failed: {error_msg}")
 
 
+ALLOWED_UPLOAD_EXTS = {"mp3", "flac", "wav", "m4a", "aac", "ogg", "oga",
+                       "opus", "aiff", "aif", "alac", "wma", "mp4"}
+
+
+@app.post("/upload")
+async def upload_source(file: UploadFile = File(...)):
+    """
+    Ingest a manually-uploaded audio file as a generic source: save it into the
+    working cache under a non-YouTube id, probe it (duration + lossless), and
+    read its embedded tags + cover so the form can be pre-filled. The returned
+    shape mirrors /search so the frontend treats it like any other source.
+    """
+    import secrets
+    from youtube_downloader import probe_audio, get_audio_duration, read_audio_tags, normalize_cover
+
+    ext = os.path.splitext(file.filename or "")[1].lower().lstrip(".")
+    if ext not in ALLOWED_UPLOAD_EXTS:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type '.{ext}'. Upload an audio file.")
+
+    source_id = "up" + secrets.token_hex(6)   # deliberately not an 11-char YT id
+    dest = os.path.join(CACHE_DIR, f"{source_id}.{ext}")
+    try:
+        with open(dest, "wb") as out:
+            shutil.copyfileobj(file.file, out)
+    finally:
+        await file.close()
+
+    duration = get_audio_duration(dest)
+    if not duration:
+        try: os.remove(dest)
+        except OSError: pass
+        raise HTTPException(status_code=400, detail="Could not read that file as audio.")
+
+    probe = probe_audio(dest)
+    tags = read_audio_tags(dest)
+
+    thumbnail = None
+    cover = tags.get("cover")
+    if cover:
+        try:
+            data, mime = normalize_cover(cover[0])
+            if data:
+                thumbnail = "data:%s;base64,%s" % (mime, base64.b64encode(data).decode())
+        except Exception:
+            thumbnail = None
+
+    return {
+        "video_id": source_id,
+        "is_upload": True,
+        "title": tags.get("title") or os.path.splitext(file.filename or "")[0],
+        "author": tags.get("artist"),
+        "album": tags.get("album"),
+        "year": tags.get("year"),
+        "genre": tags.get("genre"),
+        "composer": tags.get("composer"),
+        "duration": duration,
+        "thumbnail": thumbnail,
+        "lossless": probe.get("lossless", False),
+        "src_ext": ext,
+    }
+
+
 @app.post("/save")
 def save_audio(
     background_tasks: BackgroundTasks,
-    url: str = Query(..., description="The YouTube URL to download audio from"),
+    url: Optional[str] = Query(None, description="The YouTube URL to download audio from (or use source_id)"),
+    source_id: Optional[str] = Query(None, description="Id of an already-cached source (e.g. an upload) — use instead of url"),
+    output_format: str = Query("auto", description="Export format: auto|mp3|flac|wav"),
     start_time: Optional[float] = Query(None, description="Start time in seconds"),
     end_time: Optional[float] = Query(None, description="End time in seconds"),
     trim_silence: bool = Query(True, description="Trim leading/trailing silence"),
@@ -464,9 +581,13 @@ def save_audio(
     Downloads and saves audio directly to /mnt/Apps.
     """
     try:
-        # 1. Validate URL
-        video_id = validate_youtube_url(url)
-        
+        # 1. Resolve the source: YouTube url OR an already-cached upload.
+        from youtube_downloader import resolve_output_format
+        video_id, source_path = resolve_source(url, source_id)
+        is_upload = source_path is not None
+        out_fmt = resolve_output_format(output_format, source_path) if is_upload \
+            else (output_format if output_format in ("mp3", "flac", "wav") else "mp3")
+
         # 2. Setup session
         if not session_id:
             session_id = uuid.uuid4().hex[:8]
@@ -498,12 +619,11 @@ def save_audio(
              if t.get('key', '').lower() == 'composer'), None)
         composer = meta_composer or composer_from_json
 
-        # 4. Build filename "Title (Album) - Artist (Composer).mp3"
+        # 4. Build filename "Title (Album) - Artist (Composer).<fmt>"
         title_for_name = meta_title
         if not title_for_name:
-            info = get_video_info(url)
-            title_for_name = info.get('title', video_id)
-        filename_to_use = build_filename(title_for_name, meta_album, meta_artist, composer, delimiter)
+            title_for_name = get_video_info(url).get('title', video_id) if not is_upload else video_id
+        filename_to_use = build_filename(title_for_name, meta_album, meta_artist, composer, delimiter, ext=out_fmt)
 
         # 5. Determine output directory based on mode
         if BROWSER_DOWNLOAD_MODE:
@@ -529,9 +649,11 @@ def save_audio(
         if custom_tags: user_metadata['custom_tags'] = custom_tags
         if thumbnail_base64: user_metadata['thumbnail_base64'] = thumbnail_base64
 
-        # 7. Download and Process
+        # 7. Download (or use cached upload) and Process
         output_path = download_youtube_audio(
             url=url,
+            source_path=source_path,
+            output_format=out_fmt,
             output_dir=output_dir,
             filename=output_filename_base,
             start_time=start_time,
@@ -578,7 +700,7 @@ def save_audio(
                 sidecar = {
                     "schema_version": 1,
                     "youtube_id": video_id,
-                    "source_url": url,
+                    "source_url": url or f"upload:{video_id}",
                     "rel_path": os.path.relpath(final_path, DOWNLOAD_DIR),
                     "filename": final_filename,
                     "original_rel": original_rel,
@@ -674,16 +796,19 @@ async def download_file(
     
     import urllib.parse
     encoded_filename = urllib.parse.quote(filename)
-    
+    mime = {"flac": "audio/flac", "wav": "audio/wav", "mp3": "audio/mpeg"}.get(
+        os.path.splitext(path)[1].lower().lstrip("."), "audio/mpeg")
+
     return FileResponse(
         path,
-        media_type="audio/mpeg",
+        media_type=mime,
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"}
     )
 
 @app.get("/stream")
 def stream_audio(
-    url: str = Query(..., description="The YouTube URL to stream"),
+    url: Optional[str] = Query(None, description="The YouTube URL to stream (or use source_id)"),
+    source_id: Optional[str] = Query(None, description="Id of an already-cached source (upload)"),
     eq_preset: Optional[str] = Query(None),
     mbc_preset: Optional[str] = Query(None),
     normalize: bool = Query(True),
@@ -691,6 +816,7 @@ def stream_audio(
     enhance_mode: Optional[str] = Query(None),
     enhance_intensity: float = Query(1.5),
     original: bool = Query(False),
+    turbo: bool = Query(False),
 ):
     """
     Preview the FULL track with the chosen effects applied — but WITHOUT range
@@ -701,43 +827,47 @@ def stream_audio(
     Renders once to a per-effect cached MP3 and serves it via FileResponse, which
     supports HTTP range requests (seekable) and makes A/B switching instant.
     """
-    from youtube_downloader import download_to_cache, process_audio
+    from youtube_downloader import download_to_cache, render_preview_checkpointed
     import hashlib
 
     try:
-        video_id = validate_youtube_url(url)
+        video_id, source_path = resolve_source(url, source_id)
 
         # Hash the effect set (NOT range/silence) so identical settings reuse the
         # same rendered file — instant replay and A/B comparison.
         key = f"{eq_preset}|{mbc_preset}|{enhance_mode}|{enhance_intensity}|{normalize}|{normalize_i}|{original}"
         h = hashlib.md5(key.encode()).hexdigest()[:10]
-        out = os.path.join(CACHE_DIR, f"prev_{video_id}_{h}.mp3")
+        out = os.path.join(CACHE_DIR, f"prev_{video_id}_{h}.flac")
 
         # Fast path: this combo was already rendered — serve it straight away.
         # No yt-dlp metadata call, no ffprobe, no re-encode. This is what makes
         # A/B switching snappy (the old code did a network get_video_info every
         # time, adding several seconds per switch).
         if os.path.exists(out) and os.path.getsize(out) > 1024:
-            return FileResponse(out, media_type="audio/mpeg")
+            return FileResponse(out, media_type="audio/flac")
 
-        # First render of this combo: ensure the source is cached, then gate on
-        # duration read from the LOCAL file (avoids the slow network metadata call).
+        # First render of this combo: ensure the source is cached (uploads are
+        # already in cache), then gate on duration read from the LOCAL file.
         try:
-            cache_file = download_to_cache(url, CACHE_DIR)
+            cache_file = source_path or download_to_cache(url, CACHE_DIR)
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Could not cache audio. {str(e)}")
 
         if (get_audio_duration(cache_file) or 0) > 1800:
             raise HTTPException(status_code=403, detail="Preview restricted to videos under 30 minutes.")
 
-        process_audio(
-            cache_file, out, total_duration=None, progress_cb=None,
+        # Render the full-length preview (lossless FLAC). With Turbo on, reuse
+        # lossless WAV checkpoints (decoded source + per-stage prefixes) so a new
+        # combo sharing a prefix resumes mid-pipeline instead of recomputing every
+        # stage; with Turbo off, a plain single-pass render (no WAVs written).
+        render_preview_checkpointed(
+            cache_file, out, video_id, os.path.join(CACHE_DIR, "ckpt"),
             eq_preset=eq_preset, mbc_preset=mbc_preset,
             enhance_mode=enhance_mode, enhance_intensity=enhance_intensity,
-            normalize=normalize, normalize_i=normalize_i,
-            original=original, trim_silence=False,
+            normalize=normalize, normalize_i=normalize_i, original=original,
+            use_checkpoints=turbo,
         )
-        return FileResponse(out, media_type="audio/mpeg")
+        return FileResponse(out, media_type="audio/flac")
     except HTTPException:
         raise
     except Exception as e:
@@ -768,7 +898,8 @@ async def cache_status(url: str = Query(..., description="The YouTube URL to che
 
 @app.get("/silence-info")
 def silence_info(
-    url: str = Query(..., description="The YouTube URL to analyze"),
+    url: Optional[str] = Query(None, description="The YouTube URL to analyze (or use source_id)"),
+    source_id: Optional[str] = Query(None, description="Id of an already-cached source (upload)"),
     silence_thresh: float = Query(-40.0)
 ):
     """
@@ -778,11 +909,11 @@ def silence_info(
     from youtube_downloader import download_to_cache, get_silence_offsets
     import traceback
     try:
-        video_id = validate_youtube_url(url)
+        video_id, source_path = resolve_source(url, source_id)
         ckey = f"{video_id}|{silence_thresh}"
         if ckey in silence_cache:
             return silence_cache[ckey]
-        cache_file = download_to_cache(url, CACHE_DIR)
+        cache_file = source_path or download_to_cache(url, CACHE_DIR)
         start, end = get_silence_offsets(cache_file, silence_thresh=silence_thresh)
         result = {"leading_silence": start, "trailing_silence": end}
         silence_cache[ckey] = result
@@ -1040,7 +1171,8 @@ def library_cover(audio_id: int):
 
 @app.get("/library/{audio_id}/audio")
 def library_audio(audio_id: int):
-    """Stream a saved track's MP3 for in-library playback (seekable)."""
+    """Stream a saved track for in-library playback (seekable). Library files may
+    be MP3/FLAC/WAV now, so pick the media type from the extension."""
     _require_library()
     detail = db.get_audio_detail(audio_id)
     if not detail or not detail.get("rel_path"):
@@ -1048,7 +1180,9 @@ def library_audio(audio_id: int):
     path = _abs(detail["rel_path"])
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="File missing")
-    return FileResponse(path, media_type="audio/mpeg")
+    mime = {"flac": "audio/flac", "wav": "audio/wav", "mp3": "audio/mpeg"}.get(
+        os.path.splitext(path)[1].lower().lstrip("."), "audio/mpeg")
+    return FileResponse(path, media_type=mime)
 
 
 @app.post("/preview-cache/clear")
@@ -1066,15 +1200,19 @@ def clear_preview_cache(url: Optional[str] = Query(None)):
                 vid = validate_youtube_url(url)
             except Exception:
                 return {"removed": 0}
-            pattern = os.path.join(CACHE_DIR, f"prev_{vid}_*.mp3")
+            patterns = [os.path.join(CACHE_DIR, f"prev_{vid}_*"),
+                        os.path.join(CACHE_DIR, "ckpt", f"base_{vid}.wav"),
+                        os.path.join(CACHE_DIR, "ckpt", f"ck_{vid}_*.wav")]
         else:
-            pattern = os.path.join(CACHE_DIR, "prev_*.mp3")
-        for f in glob.glob(pattern):
-            try:
-                os.remove(f)
-                removed += 1
-            except Exception:
-                pass
+            patterns = [os.path.join(CACHE_DIR, "prev_*"),
+                        os.path.join(CACHE_DIR, "ckpt", "*.wav")]
+        for pattern in patterns:
+            for f in glob.glob(pattern):
+                try:
+                    os.remove(f)
+                    removed += 1
+                except Exception:
+                    pass
     except Exception:
         pass
     return {"removed": removed}

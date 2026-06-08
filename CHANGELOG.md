@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Releases are cut by pushing a `vX.Y.Z` git tag, which builds and publishes the
 Docker image (`sakhund/youtify:<version>` + `:latest`).
 
+## [Unreleased]
+
+## [2.2.2] - 2026-06-09
+
+### Added
+- **Manual file upload** — drop (or browse to) a local audio file in the download
+  view to use it as a source instead of YouTube. Embedded tags (title/artist/
+  album/year/genre/composer) and cover art are auto-read to pre-fill the editor;
+  the file is probed for losslessness. New `POST /upload`; `/stream`, `/silence-info`
+  and `/save` now accept a `source_id` alongside `url` (resolved by `resolve_source`).
+- **Selectable export format** — Auto / MP3 320 / FLAC / WAV, chosen from the
+  action bar. **Auto** keeps lossless sources lossless (lossless source → FLAC,
+  lossy → MP3 320). FLAC is tagged via Vorbis comments + a Picture block; MP3/WAV
+  via ID3. Export is a single pass from the source, so a lossless upload exported
+  as FLAC/WAV has no lossy stage at all.
+- **Batch "⊞ Generate" mixes** — pick sets of EQ / compression / enhance / intensity
+  / loudness values and add every combination to the Mixes (A/B) list at once. Chips
+  are added lazily (they render only when clicked), so big batches don't thrash the
+  CPU. The Mixes list now holds up to 200 and scrolls.
+- **⚡ Turbo Render (opt-in preview speed-up)** — caches lossless WAV checkpoints
+  of the preview pipeline (decoded source + one per cumulative effect prefix:
+  +EQ, +compression, +enhance) under `<cache>/work/ckpt/`. A new combo that shares
+  a prefix with an earlier render resumes mid-pipeline instead of recomputing every
+  stage (e.g. nudging the enhance knob reuses base+EQ+comp). Off by default; toggle
+  in the effects panel, or set the default with `--turbo` / `TURBO_PREVIEW=1`
+  (surfaced via `GET /config`). All intermediates are lossless, so no quality loss.
+- **OS media integration on the download preview** — the preview player now also
+  publishes title/artist/album + cover to the OS (lock screen / desktop widget)
+  with play/pause/seek, matching the library player.
+
+### Changed
+- **Preview is now lossless FLAC** (was 320 kbps MP3) — faster to render *and*
+  higher quality (no lossy stage). Download/export is unchanged (single-pass
+  320 kbps MP3).
+- **Max-quality source download** — yt-dlp now grabs the highest-bitrate
+  audio-only stream (typically ~160 kbps Opus) instead of being pinned to the
+  lower-bitrate AAC/m4a, and never falls back to a muxed video stream.
+- **New search clears other videos' cache** — preview renders and checkpoints for
+  other videos are dropped on each `/search`, keeping the current track's cached.
+- **More search results** — text search now returns up to ~30 results in a
+  scrollable list (was 10), no pagination.
+- **Per-track ⋮ menu** — dropped *Play* (clicking the row already plays) and added
+  a **Download** action (saves the library file with its proper name).
+
+### Fixed
+- **Library "Add to playlist…" menu** opened and closed instantly — the outside-
+  click closer fired on the same click; menu-item clicks no longer bubble to it.
+- **FLAC/WAV library tracks** now play and download with the correct content type
+  (the endpoint always sent `audio/mpeg`).
+- **Effect changes mid-render are no longer dropped** — re-render now triggers on
+  playback intent (not just `!paused`) and is debounced, so changing a knob while
+  a render is in flight applies without needing to pause + play.
+- **Preview starts at the silence-trimmed range** — the start seek is re-asserted
+  once the element becomes seekable (first load wasn't seekable yet, so it started
+  at 0), and the resume position is clamped to the range start.
+- `cleanup_cache` no longer aborts its sweep when it hits the `ckpt/` directory
+  (it tried to `os.remove` a folder); it now skips non-files.
+
 ## [2.2.1] - 2026-06-08
 
 ### Added
@@ -157,7 +215,9 @@ Docker image (`sakhund/youtify:<version>` + `:latest`).
   normalization, enhancement modes, range select, live seekable preview, and
   ID3 + cover-art metadata embedding.
 
-[Unreleased]: https://github.com/sakhund/youtify/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/sakhund/youtify/compare/v2.2.2...HEAD
+[2.2.2]: https://github.com/sakhund/youtify/compare/v2.2.1...v2.2.2
+[2.2.1]: https://github.com/sakhund/youtify/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/sakhund/youtify/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/sakhund/youtify/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/sakhund/youtify/compare/v1.0.0...v2.0.0

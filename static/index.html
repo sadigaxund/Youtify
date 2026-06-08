@@ -818,7 +818,32 @@
             display: flex;
             flex-direction: column;
             gap: 0.4rem;
+            max-height: 38vh;
+            overflow-y: auto;
         }
+
+        /* Batch "Generate combos" picker */
+        .gen-overlay {
+            position: fixed; inset: 0; z-index: 1000;
+            background: rgba(0, 0, 0, 0.55);
+            display: flex; align-items: center; justify-content: center;
+            padding: 1rem;
+        }
+        .gen-panel {
+            background: var(--card-bg, #15161c); border: 1px solid var(--card-border);
+            border-radius: 14px; width: min(560px, 96vw); max-height: 86vh; overflow-y: auto;
+            padding: 1.1rem 1.2rem; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+        .gen-panel h3 { margin: 0 0 0.2rem; font-size: 1rem; }
+        .gen-panel .gen-sub { color: var(--text-dim); font-size: 0.78rem; margin-bottom: 0.8rem; }
+        .gen-dim { margin-bottom: 0.7rem; }
+        .gen-dim > label { display: block; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); margin-bottom: 0.35rem; }
+        .gen-opts { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+        .gen-opt { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.78rem; padding: 0.25rem 0.5rem; border: 1px solid var(--card-border); border-radius: 8px; cursor: pointer; user-select: none; }
+        .gen-opt input { accent-color: var(--accent, #8ab4f8); }
+        .gen-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-top: 0.9rem; }
+        .gen-count { font-size: 0.8rem; color: var(--text-dim); }
+        .gen-foot button { width: auto; margin: 0; padding: 0.4rem 0.9rem; font-size: 0.8rem; border-radius: 8px; }
 
         .ab-empty {
             font-size: 0.72rem;
@@ -1407,7 +1432,29 @@
             flex-direction: column;
             gap: 0.4rem;
             margin-top: 0.75rem;
+            max-height: 60vh;
+            overflow-y: auto;
         }
+
+        .drop-zone {
+            margin-top: 0.6rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.55rem;
+            padding: 0.85rem 1rem;
+            border: 1.5px dashed var(--card-border);
+            border-radius: 12px;
+            color: rgba(255, 255, 255, 0.55);
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: border-color .15s, background .15s, color .15s;
+        }
+        .drop-zone u { color: var(--accent, #8ab4f8); text-decoration: none; }
+        .drop-zone:hover { border-color: rgba(255, 255, 255, 0.35); color: rgba(255, 255, 255, 0.75); }
+        .drop-zone.drag { border-color: var(--accent, #8ab4f8); background: rgba(138, 180, 248, 0.08); color: #fff; }
+        .drop-zone.busy { opacity: 0.6; pointer-events: none; }
+        .drop-zone i { width: 18px; height: 18px; }
 
         .sr-row {
             display: flex;
@@ -1979,6 +2026,14 @@
                 <span>Search</span>
             </button>
 
+            <!-- Drop / pick a local audio file instead of using YouTube. Hides once
+                 a key search runs or a source is loaded. -->
+            <div id="dropZone" class="drop-zone">
+                <input type="file" id="fileInputSrc" accept="audio/*" style="display:none;">
+                <i data-lucide="upload-cloud"></i>
+                <span>Drop an audio file here, or <u>browse</u> — keeps lossless sources lossless</span>
+            </div>
+
             <div id="searchResults" class="search-results" style="display:none;"></div>
 
             <div id="preview" class="preview">
@@ -2107,6 +2162,16 @@
                                 </select>
                             </div>
                         </div>
+                        <div class="grid-item">
+                            <label>⚡ Turbo Render</label>
+                            <div style="display:flex; gap:0.4rem; align-items:center;">
+                                <label class="mini-toggle">
+                                    <input type="checkbox" id="turboToggle">
+                                    <div class="mini-check"><i data-lucide="check"></i></div>
+                                </label>
+                                <span style="font-size:0.72rem; opacity:0.6;">Cache stages for faster re-renders (uses disk)</span>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- A/B compare: each Play snapshots the current effect set so you
@@ -2114,7 +2179,10 @@
                     <div id="abCompare" class="ab-compare">
                         <div class="ab-head">
                             <span><i data-lucide="layers" style="width:12px;height:12px;"></i> Mixes</span>
-                            <button id="abClear" type="button" title="Clear all mixes">Clear</button>
+                            <span style="display:inline-flex; gap:0.3rem;">
+                                <button id="abGenerate" type="button" title="Generate many mixes at once">⊞ Generate</button>
+                                <button id="abClear" type="button" title="Clear all mixes">Clear</button>
+                            </span>
                         </div>
                         <div id="abList" class="ab-list">
                             <span class="ab-empty">Press play — each mix you preview is saved here to flip between.</span>
@@ -2258,6 +2326,13 @@
                 </div>
 
                 <div class="action-buttons">
+                    <select id="formatSelect" class="styled-select-mini" title="Export format"
+                        style="flex:0 0 auto; width:auto;">
+                        <option value="auto" selected>Auto</option>
+                        <option value="mp3">MP3 320</option>
+                        <option value="flac">FLAC</option>
+                        <option value="wav">WAV</option>
+                    </select>
                     <button id="downloadBtn" style="flex:1">
                         <i data-lucide="download"></i>
                         <span>Download</span>
@@ -2470,6 +2545,7 @@
             // --- State ---
             let videoDuration = 0;
             let currentVideoId = '';
+            let currentSourceId = null;   // set for uploaded/cached sources; null for YouTube
             let session_id = '';
             let isDragging = false;
             let playbackInterval = null;
@@ -2498,6 +2574,17 @@
                 if (silenceThreshSelect) silenceThreshSelect.value = '-40'; // Default to -40 dB
             }
             resetDefaults();
+
+            // Turbo Render (checkpoint cache) is opt-in. Default comes from the
+            // user's saved choice; if they've never chosen, the server flag
+            // (turbo_default) is applied once /config resolves. Persist on change.
+            (function initTurbo() {
+                const tt = document.getElementById('turboToggle');
+                if (!tt) return;
+                const saved = localStorage.getItem('youtify_turbo');
+                if (saved !== null) tt.checked = (saved === '1');
+                tt.addEventListener('change', () => localStorage.setItem('youtify_turbo', tt.checked ? '1' : '0'));
+            })();
 
             // --- Elements ---
             const els = {
@@ -2532,8 +2619,12 @@
                 enhanceIntensitySelect: document.getElementById('enhanceIntensitySelect'),
                 trimSilenceToggle: document.getElementById('trimSilenceToggle'),
                 silenceThreshSelect: document.getElementById('silenceThreshSelect'),
+                turboToggle: document.getElementById('turboToggle'),
                 downloadBtn: document.getElementById('downloadBtn'),
                 uploadNextBtn: document.getElementById('uploadNextBtn'),
+                formatSelect: document.getElementById('formatSelect'),
+                dropZone: document.getElementById('dropZone'),
+                fileInputSrc: document.getElementById('fileInputSrc'),
                 success: document.getElementById('success'),
                 silenceStartOverlay: document.getElementById('silenceStartOverlay'),
                 silenceEndOverlay: document.getElementById('silenceEndOverlay'),
@@ -2569,7 +2660,8 @@
                 customTagsContainer: document.getElementById('customTagsContainer'),
                 delimiterInput: document.getElementById('delimiterInput'),
                 abList: document.getElementById('abList'),
-                abClear: document.getElementById('abClear')
+                abClear: document.getElementById('abClear'),
+                abGenerate: document.getElementById('abGenerate')
             };
 
             // --- Pipeline Progress Helpers ---
@@ -3246,7 +3338,7 @@
             });
 
             async function updateSilenceVisualization() {
-                if (!els.trimSilenceToggle.checked || !els.urlInput.value) {
+                if (!els.trimSilenceToggle.checked || (!els.urlInput.value && !currentSourceId)) {
                     silenceInfo = { leading: 0, trailing: 0 };
                     els.silenceStartOverlay.style.width = '0';
                     els.silenceEndOverlay.style.width = '0';
@@ -3255,7 +3347,9 @@
                 }
 
                 try {
-                    const res = await fetch(`/silence-info?url=${encodeURIComponent(els.urlInput.value)}&silence_thresh=${els.silenceThreshSelect.value}`);
+                    const sp = new URLSearchParams({ silence_thresh: els.silenceThreshSelect.value });
+                    setSourceParam(sp);
+                    const res = await fetch(`/silence-info?${sp.toString()}`);
                     if (res.ok) {
                         const data = await res.json();
                         silenceInfo = { leading: data.leading_silence, trailing: data.trailing_silence };
@@ -3320,6 +3414,7 @@
             }
             async function doYtSearch(q) {
                 hideSearchResults();
+                if (els.dropZone) els.dropZone.style.display = 'none';
                 setLoading(els.searchBtn, true);
                 try {
                     const res = await fetch('/yt-search?q=' + encodeURIComponent(q));
@@ -3338,6 +3433,44 @@
             });
             els.urlInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); els.searchBtn.click(); } });
 
+            // --- File upload (use a local file instead of YouTube) ---
+            async function uploadLocalFile(file) {
+                if (!file) return;
+                hideSearchResults();
+                setLoading(els.searchBtn, true);
+                if (els.dropZone) els.dropZone.classList.add('busy');
+                try {
+                    const fd = new FormData();
+                    fd.append('file', file);
+                    const res = await fetch('/upload', { method: 'POST', body: fd });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) throw new Error(data.detail || 'Upload failed');
+                    onSourceReady(data, { isUpload: true });
+                } catch (e) {
+                    showError(e.message);
+                } finally {
+                    setLoading(els.searchBtn, false);
+                    if (els.dropZone) els.dropZone.classList.remove('busy');
+                }
+            }
+            if (els.dropZone) {
+                els.dropZone.addEventListener('click', () => els.fileInputSrc.click());
+                els.fileInputSrc.addEventListener('change', e => {
+                    if (e.target.files && e.target.files[0]) uploadLocalFile(e.target.files[0]);
+                    e.target.value = '';
+                });
+                ['dragenter', 'dragover'].forEach(ev => els.dropZone.addEventListener(ev, e => {
+                    e.preventDefault(); els.dropZone.classList.add('drag');
+                }));
+                ['dragleave', 'drop'].forEach(ev => els.dropZone.addEventListener(ev, e => {
+                    e.preventDefault(); els.dropZone.classList.remove('drag');
+                }));
+                els.dropZone.addEventListener('drop', e => {
+                    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+                    if (f) uploadLocalFile(f);
+                });
+            }
+
             async function runSearch(url) {
                 els.urlInput.value = url;      // downstream /stream + /save read this field
                 hideSearchResults();
@@ -3351,59 +3484,75 @@
                         throw new Error(errText);
                     }
                     const data = await res.json();
-
-                    currentVideoId = data.video_id; // Fixed: was data.id
-
-                    // Pre-populate metadata fields
-                    originalThumbnailUrl = data.thumbnail;
-                    els.metaThumb.src = data.thumbnail;
-                    els.metaTitle.value = data.title || '';
-                    selectedArtists = data.author ? [data.author] : [];
-                    renderArtistTags();
-                    els.metaAlbum.value = '';
-                    els.metaGenre.value = '';
-                    selectedGenres = [];
-                    renderGenreTags();
-                    customThumbnailBase64 = null;
-                    // Reset custom tags and add default Composer tag
-                    els.customTagsContainer.innerHTML = '';
-                    addCustomTag(els.customTagsContainer, 'Composer', '');
-
-                    // Pre-populate Year from upload_date (YYYYMMDD -> YYYY)
-                    if (data.upload_date && data.upload_date.length >= 4) {
-                        els.metaYear.value = data.upload_date.substring(0, 4);
-                    } else {
-                        els.metaYear.value = '';
-                    }
-
-                    els.preview.style.display = 'flex';
-                    els.optionsPanel.style.display = 'grid';
-                    document.getElementById('actionBar').style.display = 'flex';
-                    els.searchBtn.style.display = 'none';
-                    // Collapse the queried URL — its value persists for /stream + /save.
-                    els.inputGroup.style.display = 'none';
-
-                    initRangeSlider(data.duration);
-                    updateFilenamePreview();
-                    updateSilenceVisualization();
-
-                    // Fresh A/B list per video
-                    snapshots = [];
-                    activeSnapshotId = null;
-                    currentSrc = '';
-                    renderSnapshots();
-
-                    // Start cache polling to show caching progress
-                    startCachePoll(url);
-
-                    if (!data.can_preview) {
-                        els.previewBtn.disabled = true;
-                        els.previewBtn.title = data.limit_reason;
-                    }
+                    onSourceReady(data, { url });
                 } catch (err) {
                     showError(err.message);
                 } finally {
                     setLoading(els.searchBtn, false);
+                }
+            }
+
+            // Populate the editor + reveal preview/options for a resolved source —
+            // a YouTube video (from /search) OR an uploaded file (from /upload).
+            function onSourceReady(data, opts = {}) {
+                const isUpload = !!(opts.isUpload || data.is_upload);
+                currentVideoId = data.video_id;
+                currentSourceId = isUpload ? data.video_id : null;
+
+                originalThumbnailUrl = data.thumbnail || '';
+                els.metaThumb.src = data.thumbnail || '';
+                els.metaTitle.value = data.title || '';
+                selectedArtists = data.author ? [data.author] : [];
+                renderArtistTags();
+                els.metaAlbum.value = data.album || '';
+                selectedGenres = data.genre ? String(data.genre).split(/[|,;]/).map(g => g.trim()).filter(Boolean) : [];
+                renderGenreTags();
+                // Uploaded files may carry an embedded cover (a data: URL) — keep it
+                // as the base64 cover so it's re-embedded on save.
+                customThumbnailBase64 = (data.thumbnail && data.thumbnail.startsWith('data:'))
+                    ? data.thumbnail.split(',')[1] : null;
+                els.customTagsContainer.innerHTML = '';
+                addCustomTag(els.customTagsContainer, 'Composer', data.composer || '');
+
+                // Year: uploads carry it directly; YouTube gives upload_date YYYYMMDD.
+                if (isUpload) {
+                    els.metaYear.value = data.year || '';
+                } else if (data.upload_date && data.upload_date.length >= 4) {
+                    els.metaYear.value = data.upload_date.substring(0, 4);
+                } else {
+                    els.metaYear.value = '';
+                }
+
+                els.preview.style.display = 'flex';
+                els.optionsPanel.style.display = 'grid';
+                document.getElementById('actionBar').style.display = 'flex';
+                els.searchBtn.style.display = 'none';
+                els.inputGroup.style.display = 'none';
+                if (els.dropZone) els.dropZone.style.display = 'none';
+
+                initRangeSlider(data.duration);
+                updateFilenamePreview();
+                updateSilenceVisualization();
+
+                // Fresh A/B list per source
+                snapshots = [];
+                activeSnapshotId = null;
+                currentSrc = '';
+                renderSnapshots();
+
+                if (isUpload) {
+                    // Already in cache — no download to poll.
+                    isCached = true;
+                } else {
+                    startCachePoll(opts.url);
+                }
+
+                if (data.can_preview === false) {
+                    els.previewBtn.disabled = true;
+                    els.previewBtn.title = data.limit_reason || '';
+                } else {
+                    els.previewBtn.disabled = false;
+                    els.previewBtn.title = '';
                 }
             }
 
@@ -3455,14 +3604,24 @@
             // When an effect changes: if playing, re-render the preview live at the
             // current position; otherwise the next Play picks it up. Clears any
             // active A/B snapshot selection (you're now on the live controls).
+            let fxRerenderTimer = null;
             function onEffectChange() {
-                if (!previewAudio.paused) {
-                    // You're hearing this combo live, so snapshot it too — same as
-                    // pressing Play. Keeps the A/B list consistent with playback.
-                    const p = effectParams();
-                    recordSnapshot(p);
-                    renderSnapshots();
-                    playPreview(previewUrlFrom(p), previewAudio.currentTime);
+                // Re-render whenever there's PLAYBACK INTENT — i.e. we're playing OR
+                // a render is still in flight (during which previewAudio.paused is
+                // true because load() paused it). Checking only `!paused` dropped
+                // changes made mid-render, so you had to pause+play to apply them.
+                const playingIntent = isStreaming || !previewAudio.paused;
+                if (playingIntent) {
+                    // Debounce: dragging Low->Mid->High should fire ONE render, not
+                    // three. switchToken already makes the last load win, so the
+                    // interrupted in-flight renders are simply ignored on arrival.
+                    clearTimeout(fxRerenderTimer);
+                    fxRerenderTimer = setTimeout(() => {
+                        const p = effectParams();
+                        recordSnapshot(p);   // keep A/B consistent with playback
+                        renderSnapshots();
+                        playPreview(previewUrlFrom(p), previewAudio.currentTime);
+                    }, 250);
                 } else {
                     // Not playing: no audio heard yet, so don't snapshot — just drop
                     // the active highlight (controls no longer match a saved combo).
@@ -3528,6 +3687,51 @@
                 try { previewAudio.currentTime = rangeStart(); previewAudio.play(); } catch (e) { stopPlayback(); }
             });
 
+            // --- OS media integration for the download preview ---
+            // The library player wires libAudio the same way; only one element
+            // plays at a time, so whichever last hit play() owns the OS session.
+            // Preview has no track list, so no prev/next — just metadata + play/
+            // pause/seek so it shows on the lock screen / desktop media widget.
+            function updatePreviewMediaSession() {
+                if (!('mediaSession' in navigator)) return;
+                const art = [];
+                const src = els.metaThumb && els.metaThumb.src;
+                // Only attach real cover art (skip empty / the page URL placeholder).
+                if (src && src !== window.location.href && !src.endsWith('/')) {
+                    ['96x96', '256x256', '512x512'].forEach(s => art.push({ src, sizes: s }));
+                }
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: (els.metaTitle && els.metaTitle.value) || 'Youtify preview',
+                    artist: selectedArtists.join(', '),
+                    album: (els.metaAlbum && els.metaAlbum.value) || '',
+                    artwork: art,
+                });
+            }
+            function updatePreviewPositionState() {
+                if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) return;
+                const d = previewAudio.duration;
+                if (!d || !isFinite(d)) return;
+                try { navigator.mediaSession.setPositionState({ duration: d, position: Math.min(previewAudio.currentTime, d), playbackRate: previewAudio.playbackRate || 1 }); } catch (e) { }
+            }
+            if ('mediaSession' in navigator) {
+                const ms = navigator.mediaSession;
+                const claimSession = () => {
+                    const set = (a, fn) => { try { ms.setActionHandler(a, fn); } catch (e) { } };
+                    set('play', () => previewAudio.play());
+                    set('pause', () => previewAudio.pause());
+                    set('previoustrack', null);
+                    set('nexttrack', null);
+                    set('seekto', d => { if (d && d.seekTime != null) { previewAudio.currentTime = d.seekTime; updatePreviewPositionState(); } });
+                    set('seekbackward', d => { previewAudio.currentTime = Math.max(0, previewAudio.currentTime - ((d && d.seekOffset) || 10)); });
+                    set('seekforward', d => { previewAudio.currentTime = Math.min(previewAudio.duration || 1e9, previewAudio.currentTime + ((d && d.seekOffset) || 10)); });
+                    updatePreviewMediaSession();
+                };
+                previewAudio.addEventListener('play', () => { claimSession(); ms.playbackState = 'playing'; });
+                previewAudio.addEventListener('pause', () => { ms.playbackState = 'paused'; });
+                previewAudio.addEventListener('loadedmetadata', updatePreviewPositionState);
+                previewAudio.addEventListener('timeupdate', updatePreviewPositionState);
+            }
+
             function rangeStart() { return parseFloat(els.startSlider.value) || 0; }
             function rangeEnd() { return parseFloat(els.endSlider.value) || videoDuration; }
 
@@ -3552,17 +3756,23 @@
                 };
             }
 
+            // Set either source_id (uploaded/cached) or url (YouTube) on a params obj.
+            function setSourceParam(params) {
+                if (currentSourceId) params.set('source_id', currentSourceId);
+                else params.set('url', els.urlInput.value.trim());
+            }
             function previewUrlFrom(p) {
                 const params = new URLSearchParams({
-                    url: els.urlInput.value.trim(),
                     eq_preset: p.eq_preset || '',
                     mbc_preset: p.mbc_preset || '',
                     enhance_mode: p.enhance_mode || '',
                     enhance_intensity: p.enhance_intensity,
                     normalize: p.normalize,
                     normalize_i: p.normalize_i,
-                    original: p.original
+                    original: p.original,
+                    turbo: !!(els.turboToggle && els.turboToggle.checked)
                 });
+                setSourceParam(params);
                 return `/stream?${params.toString()}`;
             }
 
@@ -3581,8 +3791,14 @@
                     return;
                 }
 
-                // Resume where we are now (keep position across an effect/mix switch).
-                const resumeAt = (previewAudio.src && previewAudio.currentTime > 0) ? previewAudio.currentTime : startAt;
+                // Resume where we are now (keep position across an effect/mix switch),
+                // but NEVER before the selected range start. Without this clamp, an
+                // effect change made before playback actually began (first combo still
+                // loading, so currentTime is still 0) resumes at 0 and ignores the
+                // silence-trimmed range.
+                let resumeAt = (previewAudio.src && previewAudio.currentTime > 0) ? previewAudio.currentTime : startAt;
+                const rStart = rangeStart();
+                if (!(resumeAt >= rStart)) resumeAt = rStart;
                 const myToken = ++switchToken;
                 currentSrc = url;
                 isStreaming = true;
@@ -3596,11 +3812,32 @@
                     // Clamp the resume seek strictly inside the new file. Seeking past
                     // EOF (or before duration is known) makes the browser request a
                     // byte range the server can't satisfy -> 416 -> media error/stop.
-                    const dur = previewAudio.duration;
-                    let at = resumeAt;
-                    if (dur && isFinite(dur)) at = Math.min(at, dur - 0.3);
-                    if (!(at >= 0)) at = 0;
-                    try { if (Math.abs(previewAudio.currentTime - at) > 0.25) previewAudio.currentTime = at; } catch (e) { }
+                    const target = () => {
+                        const dur = previewAudio.duration;
+                        let at = resumeAt;
+                        if (dur && isFinite(dur)) at = Math.min(at, dur - 0.3);
+                        return (at >= 0) ? at : 0;
+                    };
+                    // On the FIRST load the element often isn't seekable yet
+                    // (seekable.length===0 / duration unparsed), so assigning
+                    // currentTime is silently dropped and playback starts at 0.
+                    // Re-assert the seek until it sticks (or we give up).
+                    let tries = 0;
+                    const ensureSeek = () => {
+                        if (myToken !== switchToken) return true;   // stale -> stop
+                        const at = target();
+                        if (at <= 0.25) return true;                // nothing to seek to
+                        if (Math.abs(previewAudio.currentTime - at) <= 0.4) return true; // landed
+                        if (previewAudio.seekable && previewAudio.seekable.length) {
+                            try { previewAudio.currentTime = at; } catch (e) { }
+                        }
+                        return (++tries > 25);                       // ~2.5s cap, then give up
+                    };
+                    if (!ensureSeek()) {
+                        const iv = setInterval(() => { if (ensureSeek()) clearInterval(iv); }, 100);
+                        ['seeked', 'canplaythrough'].forEach(ev =>
+                            previewAudio.addEventListener(ev, () => { if (ensureSeek()) clearInterval(iv); }, { once: true }));
+                    }
                     const pr = previewAudio.play();
                     if (pr) pr.catch(e => { if (e.name !== 'AbortError') { showError('Playback failed: ' + e.message); stopPlayback(); } });
                 };
@@ -3657,15 +3894,26 @@
                 return bits.length ? bits : ['Dry'];
             }
             function snapLabel(p) { return snapParts(p).join(' · '); }
+            const MAX_SNAPSHOTS = 200;
             function recordSnapshot(p) {
                 const key = paramsKey(p);
                 let s = snapshots.find(x => paramsKey(x.params) === key);
                 if (!s) {
                     s = { id: ++snapSeq, params: { ...p }, label: snapLabel(p) };
                     snapshots.unshift(s);
-                    if (snapshots.length > 12) snapshots.length = 12;
+                    if (snapshots.length > MAX_SNAPSHOTS) snapshots.length = MAX_SNAPSHOTS;
                 }
                 activeSnapshotId = s.id;
+            }
+            // Add a combo as a chip WITHOUT rendering it (batch generate). Chips
+            // render lazily on click via loadSnapshot. Returns false if duplicate
+            // or the cap is reached.
+            function addSnapshotLazy(p) {
+                if (snapshots.length >= MAX_SNAPSHOTS) return false;
+                const key = paramsKey(p);
+                if (snapshots.find(x => paramsKey(x.params) === key)) return false;
+                snapshots.push({ id: ++snapSeq, params: { ...p }, label: snapLabel(p) });
+                return true;
             }
             function renderSnapshots() {
                 const list = els.abList;
@@ -3721,10 +3969,103 @@
             }
             els.abClear.addEventListener('click', () => { snapshots = []; activeSnapshotId = null; renderSnapshots(); });
 
+            // --- Batch "Generate combos" -> Mixes (lazy chips) ---
+            function optsOf(sel, dropEmpty) {
+                return Array.from(sel ? sel.options : [])
+                    .filter(o => !(dropEmpty && o.value === ''))
+                    .map(o => ({ value: o.value, label: o.textContent.trim() }));
+            }
+            // Cartesian product of the selected dimension values -> deduped params.
+            function buildCombos(sel) {
+                const out = [];
+                const seen = new Set();
+                const enhList = sel.enh.length ? sel.enh : [''];
+                const intList = sel.intensity.length ? sel.intensity : ['1.5'];
+                const eqList = sel.eq.length ? sel.eq : [''];
+                const compList = sel.comp.length ? sel.comp : [''];
+                const loudList = sel.loud.length ? sel.loud : ['-16'];
+                for (const eq of eqList) for (const comp of compList)
+                    for (const enh of enhList) for (const intn of intList)
+                        for (const loud of loudList) {
+                            const p = {
+                                eq_preset: eq || '', mbc_preset: comp || '',
+                                enhance_mode: enh || '',
+                                enhance_intensity: enh ? intn : '1.5',
+                                normalize: loud !== 'off',
+                                normalize_i: loud === 'off' ? '-16' : loud,
+                                original: false,
+                            };
+                            const k = paramsKey(p);
+                            if (!seen.has(k)) { seen.add(k); out.push(p); }
+                        }
+                return out;
+            }
+            function openGenerator() {
+                const ov = document.createElement('div');
+                ov.className = 'gen-overlay';
+                const dims = [
+                    { key: 'eq', label: 'EQ preset', opts: [{ value: '', label: 'Off' }].concat(optsOf(els.eqPresetSelect, true)) },
+                    { key: 'comp', label: 'Compression', opts: [{ value: '', label: 'Off' }].concat(optsOf(els.mbcPresetSelect, true)) },
+                    { key: 'enh', label: 'Enhance', opts: [{ value: '', label: 'None' }].concat(optsOf(els.enhanceModeSelect, true)) },
+                    { key: 'intensity', label: 'Enhance intensity', opts: [{ value: '1.0', label: 'Low' }, { value: '1.5', label: 'Mid' }, { value: '2.0', label: 'High' }] },
+                    { key: 'loud', label: 'Loudness (LUFS)', opts: [{ value: 'off', label: 'Off' }, { value: '-12', label: '-12' }, { value: '-16', label: '-16' }, { value: '-23', label: '-23' }] },
+                ];
+                const groups = dims.map(d => `
+                    <div class="gen-dim" data-key="${d.key}">
+                        <label>${d.label}</label>
+                        <div class="gen-opts">${d.opts.map(o =>
+                    `<label class="gen-opt"><input type="checkbox" value="${o.value}">${o.label}</label>`).join('')}</div>
+                    </div>`).join('');
+                ov.innerHTML = `
+                    <div class="gen-panel" role="dialog" aria-modal="true">
+                        <h3>Generate mixes</h3>
+                        <div class="gen-sub">Tick the values to combine. Every combination is added to Mixes as a chip — each renders when you click it.</div>
+                        ${groups}
+                        <div class="gen-foot">
+                            <span class="gen-count" id="genCount">0 mixes</span>
+                            <span style="display:flex; gap:0.5rem;">
+                                <button id="genCancel" type="button" style="background:rgba(255,255,255,0.05); border:1px solid var(--card-border);">Cancel</button>
+                                <button id="genAdd" type="button">Add to Mixes</button>
+                            </span>
+                        </div>
+                    </div>`;
+                document.body.appendChild(ov);
+
+                const selOf = () => {
+                    const s = {};
+                    dims.forEach(d => {
+                        s[d.key] = Array.from(ov.querySelectorAll(`.gen-dim[data-key="${d.key}"] input:checked`)).map(i => i.value);
+                    });
+                    return s;
+                };
+                const countEl = ov.querySelector('#genCount');
+                const addBtn = ov.querySelector('#genAdd');
+                const recount = () => {
+                    const n = buildCombos(selOf()).length;
+                    const room = MAX_SNAPSHOTS - snapshots.length;
+                    countEl.textContent = `${n} mix${n === 1 ? '' : 'es'}` + (n > room ? ` (max ${room} will be added)` : '');
+                    addBtn.disabled = n === 0;
+                };
+                ov.addEventListener('change', recount);
+                recount();
+
+                const close = () => ov.remove();
+                ov.addEventListener('click', e => { if (e.target === ov) close(); });
+                ov.querySelector('#genCancel').addEventListener('click', close);
+                addBtn.addEventListener('click', () => {
+                    const combos = buildCombos(selOf());
+                    let added = 0;
+                    for (const p of combos) { if (addSnapshotLazy(p)) added++; }
+                    renderSnapshots();
+                    close();
+                    showToast(`Added ${added} mix${added === 1 ? '' : 'es'} — click any to render & play.`);
+                });
+            }
+            els.abGenerate.addEventListener('click', openGenerator);
+
             // --- Process flow ---
             els.downloadBtn.addEventListener('click', async () => {
-                const dlUrl = els.urlInput.value.trim();
-                if (!dlUrl) { showError('Please enter a YouTube URL'); return; }
+                if (!currentSourceId && !els.urlInput.value.trim()) { showError('Please enter a YouTube URL or upload a file'); return; }
                 stopPlayback();
                 session_id = Math.random().toString(36).substring(7);
                 els.downloadBtn.disabled = true;
@@ -3745,7 +4086,6 @@
                 }
 
                 const params = new URLSearchParams({
-                    url: els.urlInput.value.trim(),
                     start_time: els.startSlider.value,
                     end_time: els.endSlider.value,
                     trim_silence: els.trimSilenceToggle.checked,
@@ -3757,9 +4097,11 @@
                     normalize: els.normalizeToggle.checked,
                     normalize_i: els.normalizeISelect.value,
                     original: els.originalToggle.checked,
+                    output_format: els.formatSelect ? els.formatSelect.value : 'auto',
                     session_id: session_id,
                     delimiter: els.delimiterInput.value || '|'
                 });
+                setSourceParam(params);
 
                 // Add metadata params
                 if (els.metaTitle.value.trim()) params.set('meta_title', els.metaTitle.value.trim());
@@ -4329,7 +4671,10 @@
                     items.forEach(it => {
                         const b = document.createElement('button'); b.type = 'button'; b.textContent = it.label;
                         if (it.danger) b.style.color = 'var(--primary)';
-                        b.addEventListener('click', () => { closePlaylistMenu(); it.fn(); });
+                        // stopPropagation: keep this click from bubbling to the
+                        // outside-click closer, which would otherwise close a submenu
+                        // (e.g. "Add to playlist…") the very instant it opens.
+                        b.addEventListener('click', (e) => { e.stopPropagation(); closePlaylistMenu(); it.fn(); });
                         menu.appendChild(b);
                     });
                     document.body.appendChild(menu);
@@ -4339,19 +4684,28 @@
                     setTimeout(() => document.addEventListener('click', closePlaylistMenu, { once: true }), 0);
                 }
 
-                // Per-track kebab menu (collapses the row's actions).
+                // Per-track kebab menu (collapses the row's actions). No Play —
+                // clicking the row already plays it.
                 function openRowMenu(anchor, it) {
-                    const playing = (it.id === libPlayingId && !libAudio.paused);
                     const inManual = currentSource.type === 'playlist' && currentSource.kind !== 'dynamic';
                     const title = it.title || it.filename || it.youtube_id;
                     openMenu(anchor, [
-                        { label: playing ? 'Pause' : 'Play', fn: () => libTogglePlay(it.id) },
                         { label: 'Add to playlist…', fn: () => openPlaylistMenu(anchor, it.youtube_id) },
                         { label: 'Edit', fn: () => openEdit(it.id) },
+                        { label: 'Download', fn: () => downloadItem(it) },
                         inManual
                             ? { label: 'Remove from playlist', danger: true, fn: () => removeFromPlaylist(currentSource.id, it.youtube_id) }
                             : { label: 'Delete', danger: true, fn: () => deleteItem(it.id, title) },
                     ]);
+                }
+
+                // Download the saved file (same-origin -> the `download` attr forces
+                // a save with the library filename instead of streaming inline).
+                function downloadItem(it) {
+                    const a = document.createElement('a');
+                    a.href = `/library/${it.id}/audio`;
+                    a.download = it.filename || (it.title || it.youtube_id);
+                    document.body.appendChild(a); a.click(); a.remove();
                 }
 
                 function openPlaylistMenu(anchor, yid) {
@@ -4721,6 +5075,11 @@
                         showView('library');
                         loadLibrary();
                         loadPlaylists();
+                    }
+                    // Apply the server Turbo default only if the user hasn't chosen.
+                    const tt = document.getElementById('turboToggle');
+                    if (tt && cfg && cfg.turbo_default && localStorage.getItem('youtify_turbo') === null) {
+                        tt.checked = true;
                     }
                 }).catch(() => {});
             })();

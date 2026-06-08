@@ -204,6 +204,62 @@ def get_audio_duration(path: str) -> Optional[float]:
         return None
 
 
+# Codecs that carry full (lossless) detail. Used to decide the "auto" export
+# format and whether an uploaded source is worth keeping lossless.
+LOSSLESS_CODECS = {"flac", "alac", "wavpack", "tta", "tak", "ape", "mlp", "truehd"}
+
+
+def probe_audio(path: str) -> dict:
+    """
+    Inspect an audio file via ffprobe. Returns
+    {codec, sample_fmt, sample_rate, lossless} (best-effort, fields may be None).
+    PCM (`pcm_*`) and the codecs in LOSSLESS_CODECS count as lossless.
+    """
+    import subprocess
+    info = {"codec": None, "sample_fmt": None, "sample_rate": None, "lossless": False}
+    try:
+        out = subprocess.run(
+            ['ffprobe', '-v', 'quiet', '-select_streams', 'a:0',
+             '-show_entries', 'stream=codec_name,sample_fmt,sample_rate',
+             '-of', 'default=noprint_wrappers=1', path],
+            capture_output=True, text=True, timeout=15
+        )
+        for line in out.stdout.splitlines():
+            if '=' in line:
+                k, v = line.split('=', 1)
+                if k in ('codec_name',):
+                    info["codec"] = v.strip()
+                elif k == 'sample_fmt':
+                    info["sample_fmt"] = v.strip()
+                elif k == 'sample_rate':
+                    info["sample_rate"] = v.strip()
+        c = info["codec"] or ""
+        info["lossless"] = c in LOSSLESS_CODECS or c.startswith("pcm_")
+    except Exception:
+        pass
+    return info
+
+
+def resolve_output_format(output_format: Optional[str], source_path: Optional[str] = None) -> str:
+    """Resolve 'auto' to a concrete format: lossless source -> flac, else mp3."""
+    fmt = (output_format or "mp3").lower()
+    if fmt == "auto":
+        return "flac" if (source_path and probe_audio(source_path).get("lossless")) else "mp3"
+    return fmt if fmt in ("mp3", "flac", "wav") else "mp3"
+
+
+def _encode_args(output_format: str, sample_fmt: Optional[str] = None) -> list:
+    """FFmpeg output codec args for a concrete (already-resolved) format."""
+    fmt = output_format
+    if fmt == "flac":
+        return ['-c:a', 'flac']                       # preserve source rate
+    if fmt == "wav":
+        hi = bool(sample_fmt and ('s32' in sample_fmt or 's24' in sample_fmt or
+                                  'flt' in sample_fmt or 'dbl' in sample_fmt))
+        return ['-c:a', 'pcm_s24le' if hi else 'pcm_s16le']
+    return ['-ar', '44100', '-c:a', 'libmp3lame', '-b:a', '320k']   # mp3
+
+
 def process_audio(
     input_path: str,
     output_path: str,
@@ -220,16 +276,20 @@ def process_audio(
     """
     import subprocess
 
+    # Output codec is chosen by output_format ('mp3'|'flac'|'wav'); 'auto' resolves
+    # against the source. sample_fmt (probed upstream) picks WAV bit depth. These
+    # are NOT effect filters, so pop them before build_filter_chain.
+    output_format = effect_kwargs.pop('output_format', 'mp3')
+    sample_fmt = effect_kwargs.pop('sample_fmt', None)
+    output_format = resolve_output_format(output_format, input_path)
+
     filters = build_filter_chain(**effect_kwargs)
     cmd = ['ffmpeg', '-y', '-i', input_path]
     if filters:
         cmd.extend(['-af', ",".join(filters)])
-    cmd.extend([
-        '-map', 'a',
-        '-ar', '44100', '-b:a', '320k',
-        '-progress', 'pipe:1', '-nostats',
-        output_path,
-    ])
+    cmd.extend(['-map', 'a'])
+    cmd.extend(_encode_args(output_format, sample_fmt))
+    cmd.extend(['-progress', 'pipe:1', '-nostats', output_path])
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
@@ -249,6 +309,136 @@ def process_audio(
         err = proc.stderr.read() if proc.stderr else ''
         raise RuntimeError(f"FFmpeg processing failed: {err[-500:]}")
     return output_path
+
+
+# --- Preview pipeline checkpointing -----------------------------------------
+# The preview chain is EQ -> compression -> enhance -> loudness (no range/silence;
+# those are export-only). Rendering a NEW combo from scratch re-decodes the source
+# and re-runs every stage. We cache LOSSLESS WAV intermediates on the cache dir,
+# one per CUMULATIVE PREFIX, so a new combo resumes from the deepest checkpoint it
+# shares with an earlier render instead of recomputing those stages:
+#
+#   base_<vid>.wav      decoded source, no FX        (reused by ALL combos)
+#   ck_<vid>_<h>.wav    base + EQ                    (h = hash of the prefix)
+#   ck_<vid>_<h>.wav    base + EQ + compression
+#   ck_<vid>_<h>.wav    base + EQ + compression + enhance
+#
+# So changing only the loudness knob reuses the deepest WAV and re-runs just
+# loudnorm + encode; changing enhance reuses base+EQ+comp; etc. Loudness is the
+# LAST filter (followed only by the encode) so it isn't checkpointed — that would
+# just duplicate the final per-combo MP3 cache.
+#
+# All intermediates are lossless WAV and there is still exactly ONE lossy encode
+# (the final 320k MP3), so preview quality is identical to a single-pass render.
+# EXPORT stays single-pass (process_audio) — it needs the range-first order for
+# range-aware loudness, so it does NOT use these checkpoints.
+_PREVIEW_WAV_FMT = ['-ar', '44100', '-ac', '2', '-c:a', 'pcm_s16le']
+
+
+def _run_ffmpeg(cmd: list):
+    import subprocess
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if p.returncode != 0:
+        raise RuntimeError(f"FFmpeg failed: {(p.stderr or '')[-500:]}")
+
+
+def _ok(path: str) -> bool:
+    return os.path.exists(path) and os.path.getsize(path) > 1024
+
+
+def prune_checkpoints(ckpt_dir: str, max_bytes: int = 2 * 1024 ** 3):
+    """LRU-prune the checkpoint WAVs to a total size cap (oldest mtime first)."""
+    files = [(f, os.path.getmtime(f), os.path.getsize(f))
+             for f in glob.glob(os.path.join(ckpt_dir, '*.wav'))]
+    total = sum(s for _, _, s in files)
+    if total <= max_bytes:
+        return
+    for f, _, s in sorted(files, key=lambda x: x[1]):
+        if total <= max_bytes:
+            break
+        try:
+            os.remove(f)
+            total -= s
+        except OSError:
+            pass
+
+
+def render_preview_checkpointed(
+    source: str, out_path: str, video_id: str, ckpt_dir: str, *,
+    eq_preset=None, mbc_preset=None, enhance_mode=None, enhance_intensity=1.5,
+    normalize=True, normalize_i=-16.0, original=False, use_checkpoints=True,
+) -> str:
+    """
+    Render a full-length preview, encoded LOSSLESS (FLAC — `out_path` should end
+    .flac): faster to produce than a 320k MP3 *and* higher quality (no lossy stage).
+    Export/download is separate (process_audio -> 320k MP3) and is unaffected.
+
+    use_checkpoints (Turbo): when True, cache lossless WAV intermediates per
+    pipeline prefix so a new combo sharing a prefix resumes mid-pipeline instead of
+    recomputing every stage. When False, a plain single-pass render (no WAVs).
+    """
+    import hashlib
+
+    # Turbo OFF: one ffmpeg pass, source -> full filter chain -> FLAC. No WAVs.
+    if not use_checkpoints:
+        filters = build_filter_chain(
+            eq_preset=eq_preset, mbc_preset=mbc_preset,
+            enhance_mode=enhance_mode, enhance_intensity=enhance_intensity,
+            normalize=normalize, normalize_i=normalize_i,
+            original=original, trim_silence=False, include_range=False,
+        )
+        cmd = ['ffmpeg', '-y', '-i', source]
+        if filters:
+            cmd.extend(['-af', ",".join(filters)])
+        cmd.extend(['-map', 'a', '-ar', '44100', '-c:a', 'flac', out_path])
+        _run_ffmpeg(cmd)
+        return out_path
+
+    os.makedirs(ckpt_dir, exist_ok=True)
+
+    # Tier 0: decoded source WAV. Built once per video, reused by every combo.
+    base = os.path.join(ckpt_dir, f"base_{video_id}.wav")
+    if not _ok(base):
+        _run_ffmpeg(['ffmpeg', '-y', '-i', source, '-map', 'a', *_PREVIEW_WAV_FMT, base])
+
+    # Original = no tonal/dynamic FX -> straight (lossless) encode from the source.
+    if original:
+        _run_ffmpeg(['ffmpeg', '-y', '-i', base, '-map', 'a', '-ar', '44100', '-c:a', 'flac', out_path])
+        prune_checkpoints(ckpt_dir)
+        return out_path
+
+    # Ordered tonal/dynamic stages (preview order: EQ -> compression -> enhance).
+    stages = []
+    if eq_preset and eq_preset in EQ_PRESETS:
+        stages.append(("eq", EQ_PRESETS[eq_preset], eq_preset))
+    if mbc_preset and mbc_preset in MBC_PRESETS:
+        stages.append(("comp", MBC_PRESETS[mbc_preset], mbc_preset))
+    enh = build_enhance_filter(enhance_mode, enhance_intensity)
+    if enh:
+        stages.append(("enh", enh, f"{enhance_mode}:{enhance_intensity}"))
+
+    # Walk the chain, materializing a WAV checkpoint after EACH stage keyed by the
+    # cumulative prefix. Existing checkpoints are skipped, so a combo sharing a
+    # prefix with an earlier render resumes from the deepest one already on disk.
+    prev_path = base
+    prefix_key = ""
+    for name, filt, idpart in stages:
+        prefix_key += f"|{name}={idpart}"
+        h = hashlib.md5(prefix_key.encode()).hexdigest()[:12]
+        cp = os.path.join(ckpt_dir, f"ck_{video_id}_{h}.wav")
+        if not _ok(cp):
+            _run_ffmpeg(['ffmpeg', '-y', '-i', prev_path, '-af', filt,
+                         '-map', 'a', *_PREVIEW_WAV_FMT, cp])
+        prev_path = cp
+
+    # Tail: loudness (last filter) + the lossless FLAC encode.
+    cmd = ['ffmpeg', '-y', '-i', prev_path]
+    if normalize:
+        cmd.extend(['-af', f"loudnorm=I={normalize_i}:LRA=11:TP=-1.5"])
+    cmd.extend(['-map', 'a', '-ar', '44100', '-c:a', 'flac', out_path])
+    _run_ffmpeg(cmd)
+    prune_checkpoints(ckpt_dir)
+    return out_path
 
 
 def validate_youtube_url(url: str) -> Optional[str]:
@@ -378,7 +568,7 @@ def get_video_info(url: str) -> dict:
         raise RuntimeError(f"Failed to extract video info: {str(e)}")
 
 
-def search_youtube(query: str, limit: int = 10) -> list:
+def search_youtube(query: str, limit: int = 30) -> list:
     """
     Search YouTube for a free-text query and return up to `limit` lightweight
     results (flat extraction — no per-video network calls, so it's fast).
@@ -430,25 +620,22 @@ def download_youtube_audio(
     user_metadata: Optional[dict] = None,
     cache_dir: Optional[str] = None,
     on_progress: Optional[callable] = None,
+    output_format: str = "mp3",
+    source_path: Optional[str] = None,
 ) -> str:
     """
-    Produces a processed MP3 from a YouTube URL using the unified pipeline:
+    Produces a processed audio file from a YouTube URL — or, when `source_path`
+    is given, from an already-cached source (e.g. an uploaded file) — using the
+    unified pipeline:
 
-        1. Ensure bestaudio is in the cache (download once, reuse across preview/save).
-        2. Single FFmpeg pass: cache source -> effects -> 320k MP3 (one lossy encode).
-        3. Embed ID3 metadata + cover art.
+        1. Ensure the source is cached (download once; skipped if source_path set).
+        2. Single FFmpeg pass: source -> effects -> chosen format (one encode).
+        3. Embed metadata + cover art (ID3 for mp3/wav, Vorbis for flac).
 
-    Args:
-        cache_dir: where bestaudio is cached. Defaults to a temp dir.
-        on_progress: optional callback(phase, percent) where phase is
-                     'cache' or 'process' and percent is 0-100.
-
-    Returns:
-        Path to the finished MP3.
+    output_format: 'mp3' | 'flac' | 'wav' | 'auto' (auto -> flac if the source is
+    lossless, else mp3). Returns the path to the finished file.
     """
     import subprocess
-
-    validate_youtube_url(url)
 
     output_dir = os.path.abspath(output_dir)
     os.makedirs(output_dir, exist_ok=True)
@@ -462,16 +649,26 @@ def download_youtube_audio(
         return (lambda p: on_progress(name, p)) if on_progress else None
 
     user_metadata = user_metadata or {}
+    is_upload = source_path is not None
 
-    # 1. Ensure bestaudio is cached (reuses an existing cache file if present).
-    try:
-        cache_file = download_to_cache(url, cache_dir, progress_cb=_phase('cache'))
-    except yt_dlp.DownloadError as e:
-        raise RuntimeError(f"Failed to download audio: {str(e)}")
-    if _phase('cache'):
-        _phase('cache')(100.0)
+    # 1. Get the source: an uploaded/cached file as-is, or YouTube bestaudio.
+    if is_upload:
+        cache_file = source_path
+        if _phase('cache'):
+            _phase('cache')(100.0)
+    else:
+        validate_youtube_url(url)
+        try:
+            cache_file = download_to_cache(url, cache_dir, progress_cb=_phase('cache'))
+        except yt_dlp.DownloadError as e:
+            raise RuntimeError(f"Failed to download audio: {str(e)}")
+        if _phase('cache'):
+            _phase('cache')(100.0)
 
-    output_path = os.path.join(output_dir, f"{filename}.mp3")
+    # Resolve the concrete output format + extension (auto inspects the source).
+    fmt = resolve_output_format(output_format, cache_file)
+    sample_fmt = probe_audio(cache_file).get("sample_fmt") if fmt == "wav" else None
+    output_path = os.path.join(output_dir, f"{filename}.{fmt}")
 
     # Duration of the processed clip (for accurate progress %).
     src_duration = get_audio_duration(cache_file)
@@ -481,7 +678,7 @@ def download_youtube_audio(
     else:
         total_duration = src_duration
 
-    # 2. Single processing pass (cache -> processed MP3).
+    # 2. Single processing pass (source -> processed output in `fmt`).
     process_audio(
         cache_file,
         output_path,
@@ -498,12 +695,14 @@ def download_youtube_audio(
         original=original,
         trim_silence=trim_silence_flag,
         silence_thresh=silence_thresh,
+        output_format=fmt,
+        sample_fmt=sample_fmt,
     )
 
     # 3. Metadata + cover art.
     if os.path.exists(output_path):
-        # Fetch YouTube thumbnail only if the user did not upload a custom cover.
-        if not user_metadata.get('thumbnail_base64'):
+        # Fetch the YouTube thumbnail only for YT sources without a custom cover.
+        if not is_upload and not user_metadata.get('thumbnail_base64'):
             try:
                 info = get_video_info(url)
                 if info.get('thumbnail'):
@@ -514,9 +713,10 @@ def download_youtube_audio(
                 print(f"Warning: Could not download YouTube thumbnail: {e}")
 
         try:
-            embed_custom_metadata(
+            embed_metadata(
                 output_path,
-                source_url=url,
+                output_format=fmt,
+                source_url=(url if not is_upload else f"upload:{filename}"),
                 eq_preset=eq_preset if not original else None,
                 mbc_preset=mbc_preset if not original else None,
                 normalize=normalize if not original else False,
@@ -621,6 +821,34 @@ def normalize_cover(raw: bytes, max_side: int = 1000):
         return raw, _sniff_mime(raw)
 
 
+def _processing_summary(eq_preset, mbc_preset, normalize, normalize_i,
+                        enhance_mode, trim_silence, original) -> str:
+    """Human-readable 'Processing: …' string shared across tag formats."""
+    parts = []
+    if original:
+        parts.append("Original (no processing)")
+    else:
+        if eq_preset: parts.append(f"EQ: {eq_preset}")
+        if mbc_preset: parts.append(f"Compression: {mbc_preset}")
+        if normalize: parts.append(f"Normalized: {normalize_i} LUFS")
+        if enhance_mode and enhance_mode not in ('None', ''):
+            parts.append(f"Enhance: {enhance_mode}")
+        if trim_silence: parts.append("Silence Trimmed")
+    return ", ".join(parts) if parts else "No processing"
+
+
+def embed_metadata(audio_path, output_format=None, **kwargs):
+    """
+    Format-aware metadata embedder. Dispatches on the file's container:
+    mp3/wav -> ID3 (rich), flac -> Vorbis comments + Picture. `output_format`
+    is optional; if omitted the extension decides.
+    """
+    fmt = (output_format or os.path.splitext(audio_path)[1].lstrip('.')).lower()
+    if fmt == 'flac':
+        return embed_flac_metadata(audio_path, **kwargs)
+    return embed_custom_metadata(audio_path, container=fmt, **kwargs)
+
+
 def embed_custom_metadata(
     audio_path: str,
     source_url: str,
@@ -633,15 +861,17 @@ def embed_custom_metadata(
     original: bool = False,
     thumbnail_path: Optional[str] = None,
     user_metadata: Optional[dict] = None,
-    replace: bool = True
+    replace: bool = True,
+    container: str = "mp3",
 ):
     """
-    Embeds metadata into an MP3 file using mutagen (ID3 tags).
-    
+    Embeds metadata via mutagen ID3 tags into an MP3 (or, when container='wav',
+    a WAV — mutagen stores ID3 in a RIFF chunk; support is thinner but works).
+
     Supports standard tags: title (TIT2), artist (TPE1), album (TALB),
     genre (TCON), year (TDRC), composer (TPE3), cover art (APIC),
     and custom tags (TXXX).
-    
+
     user_metadata can contain:
         - title, artist, album, genre, year, composer: standard tags
         - custom_tags: list of {key, value} dicts
@@ -650,19 +880,25 @@ def embed_custom_metadata(
     import base64
     from mutagen.mp3 import MP3
     from mutagen.id3 import ID3, TIT2, TPE1, TALB, TCON, TDRC, TPE3, COMM, TXXX, APIC, ID3NoHeaderError
-    
+
     user_metadata = user_metadata or {}
-    
+
     try:
-        # Load or create ID3 tags
-        try:
-            audio = MP3(audio_path, ID3=ID3)
+        # Load or create ID3 tags (WAV uses mutagen.wave.WAVE, also ID3-backed).
+        if container == "wav":
+            from mutagen.wave import WAVE
+            audio = WAVE(audio_path)
             if audio.tags is None:
                 audio.add_tags()
-        except ID3NoHeaderError:
-            audio = MP3(audio_path)
-            audio.add_tags()
-        
+        else:
+            try:
+                audio = MP3(audio_path, ID3=ID3)
+                if audio.tags is None:
+                    audio.add_tags()
+            except ID3NoHeaderError:
+                audio = MP3(audio_path)
+                audio.add_tags()
+
         tags = audio.tags
 
         # On a re-tag we wipe every existing frame first — APIC/TXXX/COMM are
@@ -703,18 +939,8 @@ def embed_custom_metadata(
             tags.add(TPE3(encoding=3, text=user_metadata['composer']))
         
         # Build processing description for comment
-        processing_parts = []
-        if original:
-            processing_parts.append("Original (no processing)")
-        else:
-            if eq_preset: processing_parts.append(f"EQ: {eq_preset}")
-            if mbc_preset: processing_parts.append(f"Compression: {mbc_preset}")
-            if normalize: processing_parts.append(f"Normalized: {normalize_i} LUFS")
-            if enhance_mode and enhance_mode not in ('None', ''):
-                processing_parts.append(f"Enhance: {enhance_mode}")
-            if trim_silence: processing_parts.append("Silence Trimmed")
-        
-        processing_info = ", ".join(processing_parts) if processing_parts else "No processing"
+        processing_info = _processing_summary(eq_preset, mbc_preset, normalize,
+                                              normalize_i, enhance_mode, trim_silence, original)
         tags.add(COMM(encoding=3, lang='eng', desc='', text=f"Source: {source_url} | Processing: {processing_info}"))
         tags.add(TXXX(encoding=3, desc='source_url', text=source_url))
         
@@ -752,9 +978,97 @@ def embed_custom_metadata(
 
         audio.save()
         print(f"Metadata embedded successfully into {audio_path}")
-        
+
     except Exception as e:
         print(f"Error embedding metadata with mutagen: {e}")
+
+
+def embed_flac_metadata(
+    audio_path: str,
+    source_url: str,
+    eq_preset: Optional[str] = None,
+    mbc_preset: Optional[str] = None,
+    normalize: bool = False,
+    normalize_i: float = -16.0,
+    enhance_mode: Optional[str] = None,
+    trim_silence: bool = False,
+    original: bool = False,
+    thumbnail_path: Optional[str] = None,
+    user_metadata: Optional[dict] = None,
+    replace: bool = True,
+):
+    """
+    Embed metadata into a FLAC file: Vorbis comments for the text fields plus a
+    FLAC Picture block for cover art (normalized to JPEG, like the MP3 path).
+    """
+    import base64
+    from mutagen.flac import FLAC, Picture
+    from mutagen.id3 import PictureType
+
+    user_metadata = user_metadata or {}
+    try:
+        audio = FLAC(audio_path)
+
+        # Carry the existing cover forward on a re-tag when no new one is given.
+        carried = None
+        if replace:
+            if not (user_metadata.get('thumbnail_base64') or
+                    user_metadata.get('youtube_thumbnail_data')) and audio.pictures:
+                carried = audio.pictures[0]
+            audio.clear()
+            audio.clear_pictures()
+
+        def setc(key, val):
+            if val:
+                audio[key] = str(val)
+
+        setc('TITLE', user_metadata.get('title'))
+        setc('ARTIST', user_metadata.get('artist'))
+        setc('ALBUM', user_metadata.get('album'))
+        setc('DATE', user_metadata.get('year'))
+        setc('COMPOSER', user_metadata.get('composer'))
+        if user_metadata.get('genre'):
+            delim = user_metadata.get('delimiter', '|')
+            audio['GENRE'] = delim.join(g.strip().title()
+                                        for g in user_metadata['genre'].split(delim) if g.strip())
+
+        processing_info = _processing_summary(eq_preset, mbc_preset, normalize,
+                                              normalize_i, enhance_mode, trim_silence, original)
+        audio['COMMENT'] = f"Source: {source_url} | Processing: {processing_info}"
+        audio['SOURCE_URL'] = source_url
+
+        for tag in user_metadata.get('custom_tags', []):
+            key = (tag.get('key') or '').strip()
+            value = (tag.get('value') or '').strip()
+            if not key or not value:
+                continue
+            audio['COMPOSER' if key.lower() == 'composer' else key.upper()] = value
+
+        # Cover: custom upload > YouTube thumbnail > carried-forward.
+        raw_cover = None
+        if user_metadata.get('thumbnail_base64'):
+            try:
+                raw_cover = base64.b64decode(user_metadata['thumbnail_base64'])
+            except Exception:
+                raw_cover = None
+        if not raw_cover and user_metadata.get('youtube_thumbnail_data'):
+            raw_cover = user_metadata['youtube_thumbnail_data']
+
+        if raw_cover:
+            data, mime = normalize_cover(raw_cover)
+            if data:
+                pic = Picture()
+                pic.type = PictureType.COVER_FRONT
+                pic.mime = mime
+                pic.data = data
+                audio.add_picture(pic)
+        elif carried is not None:
+            audio.add_picture(carried)
+
+        audio.save()
+        print(f"FLAC metadata embedded successfully into {audio_path}")
+    except Exception as e:
+        print(f"Error embedding FLAC metadata: {e}")
 
 
 def find_cache_file(cache_dir: str, video_id: str) -> Optional[str]:
@@ -788,6 +1102,54 @@ def find_original(originals_dir: str, video_id: str) -> Optional[str]:
         if os.path.exists(f):
             return f
     return None
+
+
+def read_audio_tags(path: str) -> dict:
+    """
+    Read common metadata + embedded cover from any audio file (mp3/flac/m4a/ogg/
+    wav…) via mutagen. Returns {title, artist, album, year, genre, composer,
+    cover:(bytes,mime)|None}; fields are None when absent. Best-effort.
+    """
+    from mutagen import File as MFile
+    out = {"title": None, "artist": None, "album": None, "year": None,
+           "genre": None, "composer": None, "cover": None}
+    # Text fields via the "easy" interface (uniform keys across ID3/Vorbis/MP4).
+    try:
+        easy = MFile(path, easy=True)
+        if easy is not None and easy.tags:
+            g = lambda k: (easy.get(k) or [None])[0]
+            out["title"] = g("title")
+            out["artist"] = g("artist")
+            out["album"] = g("album")
+            out["genre"] = g("genre")
+            out["composer"] = g("composer")
+            date = g("date") or g("year")
+            if date:
+                out["year"] = str(date)[:4]
+    except Exception:
+        pass
+    # Cover art (format-specific).
+    try:
+        raw = MFile(path)
+        cover = None
+        tags = getattr(raw, "tags", None)
+        if tags is not None and hasattr(tags, "getall"):      # ID3 (mp3/wav)
+            apic = tags.getall("APIC")
+            if apic:
+                cover = (apic[0].data, apic[0].mime or "image/jpeg")
+        if cover is None and getattr(raw, "pictures", None):  # FLAC
+            p = raw.pictures[0]
+            cover = (p.data, p.mime or "image/jpeg")
+        if cover is None and tags is not None and "covr" in getattr(tags, "keys", lambda: [])():
+            covr = tags["covr"]
+            if covr:
+                import mutagen.mp4 as _mp4
+                mime = "image/png" if covr[0].imageformat == _mp4.MP4Cover.FORMAT_PNG else "image/jpeg"
+                cover = (bytes(covr[0]), mime)
+        out["cover"] = cover
+    except Exception:
+        pass
+    return out
 
 
 def read_cover(mp3_path: str):
