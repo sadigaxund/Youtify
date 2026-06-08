@@ -47,8 +47,13 @@
 
 ### Library (Server Save mode)
 - Browse everything you've saved, **edit metadata** (re-tags the file in place — no re-download), **reprocess effects** (rebuilds from an archived original), or delete.
+- **Built-in player** — a now-playing panel with cover, seek bar, and prev/next that step through the current filtered list.
+- **OS media integration** — the playing track's title/artist/album + cover art publish to the OS, so it shows in Linux desktop media widgets (MPRIS) and mobile lock-screen/notification controls, with working play/pause/next/previous/seek. (Full controls on Android need an HTTPS origin.)
+- **Playlists** — manual or **dynamic** (filter-defined) playlists in a sidebar, drag-to-reorder, with cover art. Stored as JSON sidecars under `.youtify/playlists/`.
+- **Filter & sort** — `field=value` filter chips across any metadata (incl. custom tags) plus a sort selector, on top of full-text search.
 - Each save also writes an **archive** under `<save-dir>/.youtify/`: a copy of the source audio plus a JSON sidecar. This lets you re-render without re-downloading and rebuild the index if the database is ever lost.
 - A small **SQLite index** (`metadata.db`) powers the library and tag suggestions; it lives in the cache directory and is rebuilt from the sidecars on startup.
+- **Mobile-friendly** — Spotify-style layout: collapsible source picker, full-width track list, fixed bottom mini-bar that expands to a full sheet.
 
 ### Deployment
 - **Browser Download** (default): process and download straight to your device.
@@ -142,7 +147,7 @@ docker build -t sakhund/youtify:latest .
 ## Usage
 
 1. Paste a YouTube URL and hit **Search** — the thumbnail/metadata load and the audio starts caching in the background.
-2. Set a **time range**, pick **effects**, and press **play** to preview. Try a few combos; each is saved to the **A/B** list — click any chip to load it back into the controls and hear it (gap-free crossfade).
+2. Set a **time range**, pick **effects**, and press **play** to preview. Try a few combos; each is saved to the **A/B** list — click any chip to load it back into the controls and hear it instantly (each render cached per effect-set).
 3. Edit **metadata** and cover art.
 4. Hit **Download** — files stream to your browser (or save to the server in Server Save mode).
-5. In Server Save mode, open **Library** to revisit saved tracks: edit metadata in place, reprocess effects, or delete.
+5. In Server Save mode, open **Library** to revisit saved tracks: play them (with OS lock-screen/desktop controls), organize into playlists, filter/sort, edit metadata in place, reprocess effects, or delete.
