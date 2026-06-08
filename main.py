@@ -99,7 +99,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Youtify",
     description="High-quality YouTube Audio Downloader",
-    version="2.2.2",
+    version="2.2.3",
     lifespan=lifespan,
 )
 

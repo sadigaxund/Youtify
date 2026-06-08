@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "youtify"
+version = "2.2.3"
+description = "Pull, enhance, tag, and save high-quality audio from YouTube"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.11"
+dependencies = [
+    "yt-dlp",
+    "fastapi",
+    "uvicorn",
+    "pydub",
+    "audioop-lts",
+    "mutagen",
+    "Pillow",
+    "python-multipart",
+]
+
+[tool.setuptools]
+py-modules = ["main", "database", "youtube_downloader"]

@@ -36,16 +36,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
 # Copy entrypoint script and set permissions
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # Copy the rest of the application code
 COPY . .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir .
 
 # Expose the port the app runs on
 EXPOSE 8000

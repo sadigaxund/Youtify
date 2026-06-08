@@ -175,7 +175,7 @@ Access the UI at `http://localhost:8000`.
 ### Option 3: Build image from source
 
 ```bash
-git clone https://github.com/<your-repo>/youtify.git
+git clone https://github.com/sadigaxund/youtify.git
 cd youtify
 docker build -t sakhund/youtify:latest .
 # Then run using Option 2 commands

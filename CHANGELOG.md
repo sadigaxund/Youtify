@@ -9,6 +9,17 @@ Docker image (`sakhund/youtify:<version>` + `:latest`).
 
 ## [Unreleased]
 
+## [2.2.3] - 2026-06-09
+
+### Changed
+- **Migrated to `pyproject.toml`** (PEP 621) for dependency management — replaces
+  `requirements.txt`. Docker installs via `pip install .` directly.
+
+### Fixed
+- **Crash on file upload** — `POST /upload` requires `python-multipart` for
+  FastAPI form parsing, but it was missing from `requirements.txt`. Added to
+  `pyproject.toml` dependencies.
+
 ## [2.2.2] - 2026-06-09
 
 ### Added
@@ -215,7 +226,8 @@ Docker image (`sakhund/youtify:<version>` + `:latest`).
   normalization, enhancement modes, range select, live seekable preview, and
   ID3 + cover-art metadata embedding.
 
-[Unreleased]: https://github.com/sakhund/youtify/compare/v2.2.2...HEAD
+[Unreleased]: https://github.com/sakhund/youtify/compare/v2.2.3...HEAD
+[2.2.3]: https://github.com/sakhund/youtify/compare/v2.2.2...v2.2.3
 [2.2.2]: https://github.com/sakhund/youtify/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/sakhund/youtify/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/sakhund/youtify/compare/v2.1.0...v2.2.0
