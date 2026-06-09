@@ -839,25 +839,19 @@ def stream_audio(
     """
     from youtube_downloader import download_to_cache, render_preview_checkpointed
     import hashlib
-
     try:
         video_id, source_path = resolve_source(url, source_id)
 
-        # Hash the effect set (NOT range/silence) so identical settings reuse the
-        # same rendered file — instant replay and A/B comparison.
+        # Hash the effect set so identical settings reuse the same rendered file.
         key = f"{eq_preset}|{mbc_preset}|{enhance_mode}|{enhance_intensity}|{normalize}|{normalize_i}|{original}"
         h = hashlib.md5(key.encode()).hexdigest()[:10]
         out = os.path.join(CACHE_DIR, f"prev_{video_id}_{h}.flac")
 
-        # Fast path: this combo was already rendered — serve it straight away.
-        # No yt-dlp metadata call, no ffprobe, no re-encode. This is what makes
-        # A/B switching snappy (the old code did a network get_video_info every
-        # time, adding several seconds per switch).
+        # Fast path: already rendered — serve it straight away.
         if os.path.exists(out) and os.path.getsize(out) > 1024:
             return FileResponse(out, media_type="audio/flac")
 
-        # First render of this combo: ensure the source is cached (uploads are
-        # already in cache), then gate on duration read from the LOCAL file.
+        # First render: ensure the source is cached, then gate on duration.
         try:
             cache_file = source_path or download_to_cache(url, CACHE_DIR)
         except Exception as e:
@@ -866,21 +860,25 @@ def stream_audio(
         if (get_audio_duration(cache_file) or 0) > 1800:
             raise HTTPException(status_code=403, detail="Preview restricted to videos under 30 minutes.")
 
-        # Render the full-length preview (lossless FLAC). With Turbo on, reuse
-        # lossless WAV checkpoints (decoded source + per-stage prefixes) so a new
-        # combo sharing a prefix resumes mid-pipeline instead of recomputing every
-        # stage; with Turbo off, a plain single-pass render (no WAVs written).
+        # Render to a temp file (preserve .flac extension so FFmpeg detects the
+        # output format), then atomically rename so a concurrent reader never
+        # sees a partial file (prevents Content-Length mismatch errors).
+        base, ext = os.path.splitext(out)
+        tmp = base + ".rendering" + ext
         render_preview_checkpointed(
-            cache_file, out, video_id, os.path.join(CACHE_DIR, "ckpt"),
+            cache_file, tmp, video_id, os.path.join(CACHE_DIR, "ckpt"),
             eq_preset=eq_preset, mbc_preset=mbc_preset,
             enhance_mode=enhance_mode, enhance_intensity=enhance_intensity,
             normalize=normalize, normalize_i=normalize_i, original=original,
             use_checkpoints=turbo,
         )
+        os.replace(tmp, out)
+
         return FileResponse(out, media_type="audio/flac")
     except HTTPException:
         raise
     except Exception as e:
+        traceback.print_exc()
         error_msg = str(e)
         if "Invalid data found" in error_msg:
             error_msg = "Invalid audio data in cache. Please refresh the page and try searching again."

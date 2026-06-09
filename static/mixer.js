@@ -88,9 +88,17 @@
             function loadSnapshot(id) {
                 const s = snapshots.find(x => x.id === id);
                 if (!s) return;
-                applyParamsToControls(s.params);   // reflect combo in the controls
+                _applyingSnapshot = true;
+                try {
+                    applyParamsToControls(s.params);   // reflect combo in the controls
+                } finally {
+                    _applyingSnapshot = false;
+                }
                 activeSnapshotId = id;
                 renderSnapshots();
+                // Kill any stale onEffectChange debounce so a pending
+                // effect-change callback doesn't fire after we already switched.
+                clearTimeout(fxRerenderTimer);
                 // Keep the current playhead position (don't restart) whenever a
                 // track is loaded — whether it's currently playing or paused.
                 const pos = (currentSrc && previewAudio.currentTime > 0) ? previewAudio.currentTime : rangeStart();
@@ -141,12 +149,11 @@
                     const p = genQueue[0];
                     genAbort = new AbortController();
                     try {
-                        // GET /stream renders + caches the combo; we discard the body.
                         await fetch(previewUrlFrom(p), { signal: genAbort.signal });
                         addSnapshotLazy(p);
                         renderSnapshots();
                     } catch (e) {
-                        if (e.name === 'AbortError') break;   // Clear pressed
+                        if (e.name === 'AbortError') break;
                     }
                     genQueue.shift();
                     genDone++;
@@ -186,7 +193,8 @@
                                 eq_preset: eq || '', mbc_preset: comp || '',
                                 enhance_mode: enh || '',
                                 enhance_intensity: enh ? intn : '1.5',
-                                normalize: true, normalize_i: loud,
+                                normalize: loud !== 'off',
+                                normalize_i: loud === 'off' ? '-16' : loud,
                                 original: false,
                             };
                             const k = paramsKey(p);
@@ -198,11 +206,11 @@
                 const ov = document.createElement('div');
                 ov.className = 'gen-overlay';
                 const dims = [
-                    { key: 'eq', label: 'EQ preset', opts: optsOf(els.eqPresetSelect, true) },
-                    { key: 'comp', label: 'Compression', opts: optsOf(els.mbcPresetSelect, true) },
-                    { key: 'enh', label: 'Enhance', opts: optsOf(els.enhanceModeSelect, true) },
-                    { key: 'intensity', label: 'Enhance level', opts: [{ value: '1.0', label: 'Low' }, { value: '1.5', label: 'Mid' }, { value: '2.0', label: 'High' }] },
-                    { key: 'loud', label: 'Loudness', opts: [{ value: '-12', label: 'Loud' }, { value: '-16', label: 'Normal' }, { value: '-23', label: 'Quiet' }] },
+                    { key: 'eq', label: 'EQ preset', opts: [{ value: '', label: 'Off' }].concat(optsOf(els.eqPresetSelect, true)) },
+                    { key: 'comp', label: 'Compression', opts: [{ value: '', label: 'Off' }].concat(optsOf(els.mbcPresetSelect, true)) },
+                    { key: 'enh', label: 'Enhance', opts: [{ value: '', label: 'None' }].concat(optsOf(els.enhanceModeSelect, true)) },
+                    { key: 'intensity', label: 'Enhance intensity', opts: [{ value: '1.0', label: 'Low' }, { value: '1.5', label: 'Mid' }, { value: '2.0', label: 'High' }] },
+                    { key: 'loud', label: 'Loudness (LUFS)', opts: [{ value: 'off', label: 'Off' }, { value: '-12', label: '-12' }, { value: '-16', label: '-16' }, { value: '-23', label: '-23' }] },
                 ];
                 const groups = dims.map(d => `
                     <div class="gen-dim" data-key="${d.key}">
@@ -213,13 +221,13 @@
                 ov.innerHTML = `
                     <div class="gen-panel" role="dialog" aria-modal="true">
                         <h3>Generate mixes</h3>
-                        <div class="gen-sub">Tick the values to combine — leave a row untouched to keep that effect off. Each combination renders in the background and appears in Mixes when ready.</div>
+                        <div class="gen-sub">Tick the values to combine. Every combination is added to Mixes as a chip — each renders when you click it.</div>
                         ${groups}
                         <div class="gen-foot">
                             <span class="gen-count" id="genCount">0 mixes</span>
                             <span style="display:flex; gap:0.5rem;">
                                 <button id="genCancel" type="button" style="background:rgba(255,255,255,0.05); border:1px solid var(--card-border);">Cancel</button>
-                                <button id="genAdd" type="button">Generate</button>
+                                <button id="genAdd" type="button">Add to Mixes</button>
                             </span>
                         </div>
                     </div>`;

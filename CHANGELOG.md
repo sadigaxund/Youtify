@@ -9,11 +9,27 @@ Docker image (`sakhund/youtify:<version>` + `:latest`).
 
 ## [Unreleased]
 
+### Added
+- **Browse by Album / Artist / Genre / Year** in the library — a cover-art card
+  grid on "All Tracks" (responsive; circular cards for artists, square for the
+  rest, with track counts). Clicking a card opens a hero view (cover + name +
+  count + ▶ Play all) over that facet's tracks, reusing the existing filter/sort.
+- **Output & technical panel** in the download view — a collapsible section above
+  Download/New holding the export **format** (with a `source → target` preview),
+  **Turbo Render** (moved here from the effects grid), the **tag separator**, and
+  the **filename**.
+- **Editable filename** — a ✎ custom toggle overrides the auto-generated name; the
+  extension still follows the export format (`/save?custom_filename=`).
+- **Multi-value Composer + custom tags** — Composer and every custom tag are now
+  chip inputs (type + Enter → chip) with per-value autocomplete; suggestions are
+  individual tokens (e.g. `Emotion: [Sad] [Angry]`, not the joined string).
+  Stored delimiter-joined, so the DB/embedding are unchanged; `suggest_values`
+  splits stored values into distinct tokens.
+
 ### Changed
-- **Generate mixes now renders in the background** with a queue + `N/total`
-  progress next to "Mixes"; each chip appears only when its render finishes
-  (and is cached, so clicking it plays instantly). Clear stops the queue;
-  further Generates append to it.
+- **Generate mixes now renders in background** with a queue + `N/total`
+  progress; each chip appears only when its render finishes (cached, instant
+  click). Clear stops the queue; further Generates append to it.
 - **Turbo Render** moved from the effects grid to a header toggle beside
   Original (not treated as an effect). Effects grid is now a clean 2×2:
   Loudness, EQ, Enhance, Trim Silence.
@@ -32,36 +48,22 @@ Docker image (`sakhund/youtify:<version>` + `:latest`).
   that effect off.
 
 ### Fixed
-- **Custom-tag value suggestions** now open on mobile tap (native `<datalist>`
-  didn't respond to tap, required Enter). Styled dropdown works like
-  Artist/Genre.
-- **Tag separator input** no longer triggers browser autofill (added
-  `autocomplete="off"`).
-
-### Fixed
-- Generate dialog: opaque (was see-through), tidy aligned layout, and the
-  enhance "Off" option (was mislabeled "None").
-- Export options panel: shorter title, label sits beside its control, filename
-  field width-capped, "Rename" toggle label.
-- "File Saved" toast no longer looks boxy on mobile (rounded, lifted above the
-  mini-player).
-
-### Added
-- **Browse by Album / Artist / Genre / Year** in the library — a cover-art card
-  grid on "All Tracks" (responsive; circular cards for artists, square for the
-  rest, with track counts). Clicking a card opens a hero view (cover + name +
-  count + ▶ Play all) over that facet's tracks, reusing the existing filter/sort.
-- **Output & technical panel** in the download view — a collapsible section above
-  Download/New holding the export **format** (with a `source → target` preview),
-  **Turbo Render** (moved here from the effects grid), the **tag separator**, and
-  the **filename**.
-- **Editable filename** — a ✎ custom toggle overrides the auto-generated name; the
-  extension still follows the export format (`/save?custom_filename=`).
-- **Multi-value Composer + custom tags** — Composer and every custom tag are now
-  chip inputs (type + Enter → chip) with per-value autocomplete; suggestions are
-  individual tokens (e.g. `Emotion: [Sad] [Angry]`, not the joined string).
-  Stored delimiter-joined, so the DB/embedding are unchanged; `suggest_values`
-  splits stored values into distinct tokens.
+- Custom-tag value suggestions open on mobile tap (native `<datalist>` didn't).
+- Tag separator input no longer triggers browser autofill.
+- Generate dialog: opaque (was see-through), tidy layout, enhance "Off" was
+  mislabeled "None".
+- Export options panel: shorter title, label beside control, filename
+  width-capped.
+- "File Saved" toast no longer looks boxy on mobile.
+- **Mix switch double-fire** — `applyParamsToControls` would trigger
+  `onEffectChange` through control change events, causing a second
+  `playPreview` call. Added `_applyingSnapshot` guard and stale-debounce
+  cleanup (`clearTimeout` in `loadSnapshot`).
+- **Playback reset on mix switch** — seek retry loop now calls `play()` only
+  after seekable is available, eliminating the "start from 0 then jump"
+  artifact.
+- **`/stream` Content-Length mismatch** — render to temp file then atomically
+  rename (`os.replace`) so concurrent readers never see a partial file.
 
 ## [2.2.3] - 2026-06-09
 

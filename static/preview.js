@@ -170,6 +170,7 @@
             // active A/B snapshot selection (you're now on the live controls).
             let fxRerenderTimer = null;
             function onEffectChange() {
+                if (_applyingSnapshot) return;
                 // Re-render whenever there's PLAYBACK INTENT — i.e. we're playing OR
                 // a render is still in flight (during which previewAudio.paused is
                 // true because load() paused it). Checking only `!paused` dropped
@@ -373,37 +374,35 @@
                 const begin = () => {
                     if (started || myToken !== switchToken) return;
                     started = true;
-                    // Clamp the resume seek strictly inside the new file. Seeking past
-                    // EOF (or before duration is known) makes the browser request a
-                    // byte range the server can't satisfy -> 416 -> media error/stop.
                     const target = () => {
                         const dur = previewAudio.duration;
                         let at = resumeAt;
                         if (dur && isFinite(dur)) at = Math.min(at, dur - 0.3);
                         return (at >= 0) ? at : 0;
                     };
-                    // On the FIRST load the element often isn't seekable yet
-                    // (seekable.length===0 / duration unparsed), so assigning
-                    // currentTime is silently dropped and playback starts at 0.
-                    // Re-assert the seek until it sticks (or we give up).
+                    const doPlay = () => {
+                        if (myToken !== switchToken) return;
+                        const pr = previewAudio.play();
+                        if (pr) pr.catch(e => { if (e.name !== 'AbortError') { showError('Playback failed: ' + e.message); stopPlayback(); } });
+                    };
                     let tries = 0;
                     const ensureSeek = () => {
-                        if (myToken !== switchToken) return true;   // stale -> stop
+                        if (myToken !== switchToken) return true;
                         const at = target();
-                        if (at <= 0.25) return true;                // nothing to seek to
-                        if (Math.abs(previewAudio.currentTime - at) <= 0.4) return true; // landed
+                        if (at <= 0.25) return true;
+                        if (Math.abs(previewAudio.currentTime - at) <= 0.4) return true;
                         if (previewAudio.seekable && previewAudio.seekable.length) {
                             try { previewAudio.currentTime = at; } catch (e) { }
                         }
-                        return (++tries > 25);                       // ~2.5s cap, then give up
+                        return (++tries > 25);
                     };
-                    if (!ensureSeek()) {
-                        const iv = setInterval(() => { if (ensureSeek()) clearInterval(iv); }, 100);
+                    if (ensureSeek()) {
+                        doPlay();
+                    } else {
+                        const iv = setInterval(() => { if (ensureSeek()) { clearInterval(iv); doPlay(); } }, 100);
                         ['seeked', 'canplaythrough'].forEach(ev =>
-                            previewAudio.addEventListener(ev, () => { if (ensureSeek()) clearInterval(iv); }, { once: true }));
+                            previewAudio.addEventListener(ev, () => { if (ensureSeek()) { clearInterval(iv); doPlay(); } }, { once: true }));
                     }
-                    const pr = previewAudio.play();
-                    if (pr) pr.catch(e => { if (e.name !== 'AbortError') { showError('Playback failed: ' + e.message); stopPlayback(); } });
                 };
                 // Seek only once duration is known (loadedmetadata) so the range is valid.
                 previewAudio.addEventListener('loadedmetadata', begin, { once: true });

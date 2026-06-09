@@ -14,6 +14,7 @@
             let customThumbnailBase64 = null; // Store custom thumbnail as base64
             let isCached = false; // Track if audio is cached
             let cachePollTimer = null; // Timer for cache polling
+            let _applyingSnapshot = false; // Suppress onEffectChange while loadSnapshot sets controls
 
             // Reset all form elements to defaults on page load
             function resetDefaults() {

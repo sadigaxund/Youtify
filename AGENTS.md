@@ -6,7 +6,9 @@ FastAPI app serving a single-page frontend from `static/`. Two modes: **Browser 
 
 ## Static files (frontend)
 
-All JS is **global-scope, no modules** — loaded via `<script>` tags in order. Functions freely cross-reference across files without import/export.
+All JS is **global-scope, no modules** — loaded via `<script>` tags in order
+(app → pipeline → thumbnail → metadata → mixer → preview → search → library).
+Functions freely cross-reference across files without import/export.
 
 | File | Responsibility |
 |---|---|

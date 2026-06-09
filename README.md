@@ -118,7 +118,7 @@ It's **off by default**. Enable per-session with the toggle in the effects panel
 # Clone & install
 git clone https://github.com/<your-repo>/youtify.git
 cd youtify
-pip install -r requirements.txt
+pip install .
 
 # Run (browser download mode)
 python main.py
