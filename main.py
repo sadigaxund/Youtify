@@ -99,7 +99,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Youtify",
     description="High-quality YouTube Audio Downloader",
-    version="2.2.3",
+    version="2.2.4",
     lifespan=lifespan,
 )
 
@@ -863,16 +863,34 @@ def stream_audio(
         # Render to a temp file (preserve .flac extension so FFmpeg detects the
         # output format), then atomically rename so a concurrent reader never
         # sees a partial file (prevents Content-Length mismatch errors).
+        #
+        # The tmp name is unique per request: the dual-element preview can fire
+        # several /stream calls for the SAME combo at once, and a shared tmp made
+        # them clobber each other (one renamed it away, the rest hit
+        # FileNotFoundError on os.replace). Each renders to its own tmp; whoever
+        # finishes first publishes `out`, the rest just reuse it.
         base, ext = os.path.splitext(out)
-        tmp = base + ".rendering" + ext
-        render_preview_checkpointed(
-            cache_file, tmp, video_id, os.path.join(CACHE_DIR, "ckpt"),
-            eq_preset=eq_preset, mbc_preset=mbc_preset,
-            enhance_mode=enhance_mode, enhance_intensity=enhance_intensity,
-            normalize=normalize, normalize_i=normalize_i, original=original,
-            use_checkpoints=turbo,
-        )
-        os.replace(tmp, out)
+        tmp = f"{base}.rendering.{os.getpid()}.{uuid.uuid4().hex[:8]}{ext}"
+        try:
+            render_preview_checkpointed(
+                cache_file, tmp, video_id, os.path.join(CACHE_DIR, "ckpt"),
+                eq_preset=eq_preset, mbc_preset=mbc_preset,
+                enhance_mode=enhance_mode, enhance_intensity=enhance_intensity,
+                normalize=normalize, normalize_i=normalize_i, original=original,
+                use_checkpoints=turbo,
+            )
+            # If a concurrent request already published `out`, drop ours; else
+            # atomically publish. os.replace is atomic, so a late writer simply
+            # overwrites with identical bytes — never a missing-file error.
+            if os.path.exists(out) and os.path.getsize(out) > 1024:
+                try: os.remove(tmp)
+                except OSError: pass
+            else:
+                os.replace(tmp, out)
+        finally:
+            if os.path.exists(tmp):
+                try: os.remove(tmp)
+                except OSError: pass
 
         return FileResponse(out, media_type="audio/flac")
     except HTTPException:

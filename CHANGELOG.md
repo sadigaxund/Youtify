@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Releases are cut by pushing a `vX.Y.Z` git tag, which builds and publishes the
 Docker image (`sakhund/youtify:<version>` + `:latest`).
 
-## [Unreleased]
+## [2.2.4] - 2026-06-09
 
 ### Added
 - **Browse by Album / Artist / Genre / Year** in the library — a cover-art card
@@ -59,11 +59,21 @@ Docker image (`sakhund/youtify:<version>` + `:latest`).
   `onEffectChange` through control change events, causing a second
   `playPreview` call. Added `_applyingSnapshot` guard and stale-debounce
   cleanup (`clearTimeout` in `loadSnapshot`).
-- **Playback reset on mix switch** — seek retry loop now calls `play()` only
-  after seekable is available, eliminating the "start from 0 then jump"
-  artifact.
-- **`/stream` Content-Length mismatch** — render to temp file then atomically
-  rename (`os.replace`) so concurrent readers never see a partial file.
+- **Gapless mix switching** — the preview uses two ping-ponging `<audio>`
+  elements: the active one keeps playing while the idle one buffers AND seeks
+  the newly selected mix; the swap is a hard cut performed only once the new
+  element actually emits audio (its `playing` event). This finally removes the
+  load gap, the doubled/echoed audio, and the desync that the single-element
+  swap and the volume-crossfade attempts both produced.
+- **Mix switch no longer restarts from 0 / ignores the start point** — the new
+  element is seeked to `max(range start, current position)` and playback only
+  begins after the seek lands, so first play honors the silence-trim/selected
+  start and switches resume in place.
+- **`/stream` concurrent renders** — each request renders to a unique temp file
+  (`…rendering.<pid>.<uuid>.flac`); the first to finish publishes the result,
+  the rest reuse it. Fixes the `FileNotFoundError` on `os.replace` when several
+  `/stream` calls for the same mix raced (common now that two audio elements
+  request in parallel).
 
 ## [2.2.3] - 2026-06-09
 
