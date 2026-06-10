@@ -39,6 +39,12 @@ Functions freely cross-reference across files without import/export.
 - `GET|POST|PATCH|DELETE /playlists/*` — playlists
 - `GET|PUT|DELETE /facets/{field}/{value}/cover` — custom Browse-by thumbnails (`.youtify/facets/`)
 
+## Compatibility policy
+
+- Sidecars (`.youtify/meta/*.json`) are the source of truth; `metadata.db` is a disposable index rebuilt from them on startup.
+- New sidecar keys are **additive** and read with `.get(...)` defaults; DB migrations are additive `try: ALTER TABLE` statements. Updates must never require re-downloading tracks.
+- A breaking sidecar change bumps `schema_version` and ships a read-time migration.
+
 ## Docker / CI
 
 - `Dockerfile` — `python:3.13-slim`, installs via `pip install .` (pyproject.toml)

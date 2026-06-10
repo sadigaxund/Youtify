@@ -32,7 +32,6 @@
                 let libPlaylists = [];                  // sidebar playlists
                 let currentSource = { type: 'all' };    // {type:'all'} | {type:'playlist',...} | {type:'browse', field, value}
                 let browseField = 'album';               // active Browse-by facet
-                let browseExpanded = false;              // facet grid: 4 cards vs all
                 let facetCovers = {};                    // {field: Set(values with a custom cover)}
                 let facetCoverVer = Date.now();          // cache-buster for facet covers
                 let createFilters = [];                 // dynamic-playlist builder chips
@@ -47,6 +46,7 @@
                     playStatsArmed = id;   // counted once playback crosses the threshold
                     libAudio.src = `/library/${id}/audio`;
                     libAudio.play().catch(() => {});
+                    $('nowPlaying').style.setProperty('--np-prog', '0%');
                     renderNowPlaying();
                 }
                 function libTogglePlay(id) {
@@ -190,6 +190,8 @@
                     if (!libAudio.duration) return;
                     $('npSeek').value = String(Math.round(libAudio.currentTime / libAudio.duration * 1000));
                     $('npCur').textContent = fmtDur(libAudio.currentTime);
+                    // Mobile mini-bar shows position as a background sweep.
+                    $('nowPlaying').style.setProperty('--np-prog', (libAudio.currentTime / libAudio.duration * 100).toFixed(2) + '%');
                     updatePositionState();
                     // Count a play once past 30s (or half of a short track) — not on
                     // the first instant, so accidental clicks don't inflate stats.
@@ -213,10 +215,15 @@
                     $('libEditView').style.display = name === 'libEdit' ? 'block' : 'none';
                     $('navDownload').classList.toggle('active', name === 'download');
                     $('navLibrary').classList.toggle('active', name === 'library' || name === 'libEdit');
+                    // Library view scrolls inside .content (mobile) so the URL bar
+                    // stays put and the fixed mini-bar doesn't jitter.
+                    document.body.classList.toggle('lib-locked', name === 'library');
                     // Only one player audible at a time: pause the other tab's audio.
                     if (name === 'download') { libAudio.pause(); }
                     else { stopPlayback(); }   // pause the download preview when entering library/edit
                     window.scrollTo(0, 0);
+                    const content = document.querySelector('.content');
+                    if (content) content.scrollTop = 0;
                 }
 
                 function fmtDur(s) {
@@ -272,6 +279,7 @@
                         const ids = currentSource.track_ids || [];
                         return libItems.filter(it => ids.includes(it.youtube_id));
                     }
+                    if (currentSource.type === 'browseAll') return libItems;   // full-grid view; player scope = everything
                     if (currentSource.type === 'browse') {
                         const { field, value } = currentSource;
                         return libItems.filter(it => {
@@ -331,20 +339,25 @@
                     });
                     return [...map.values()].sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
                 }
-                const BROWSE_CAP = 4;   // collapsed facet grid size ("See all" expands)
+                const BROWSE_CAP = 4;   // capped band size on All Tracks ("See all" opens the full view)
                 function renderBrowse() {
+                    const allView = currentSource.type === 'browseAll';
                     const tabs = $('browseTabs'); tabs.innerHTML = '';
                     BROWSE_FIELDS.forEach(([f, label]) => {
                         const b = document.createElement('button');
                         b.type = 'button'; b.className = 'browse-tab' + (f === browseField ? ' active' : '');
                         b.textContent = label;
-                        b.addEventListener('click', () => { browseField = f; browseExpanded = false; renderBrowse(); });
+                        b.addEventListener('click', () => {
+                            browseField = f;
+                            if (allView) { currentSource.field = f; renderSidebar(); }
+                            renderBrowse();
+                        });
                         tabs.appendChild(b);
                     });
                     const grid = $('browseGrid'); grid.innerHTML = '';
                     const circular = browseField === 'artist';
                     const all = browseValuesFor(browseField);
-                    const shown = browseExpanded ? all : all.slice(0, BROWSE_CAP);
+                    const shown = allView ? all : all.slice(0, BROWSE_CAP);
                     shown.forEach(v => {
                         const card = document.createElement('div');
                         card.className = 'browse-card' + (circular ? ' circ' : '');
@@ -357,17 +370,29 @@
                         cnt.className = 'browse-card-count'; cnt.textContent = v.count + ' track' + (v.count === 1 ? '' : 's');
                         card.append(img, name, cnt);
                         card.addEventListener('click', () => {
-                            currentSource = { type: 'browse', field: browseField, value: v.value, name: v.value, coverId: v.coverId, updated: v.updated };
+                            currentSource = {
+                                type: 'browse', field: browseField, value: v.value, name: v.value,
+                                coverId: v.coverId, updated: v.updated,
+                                from: allView ? 'browseAll' : undefined,
+                            };
                             renderLibrary();
                         });
                         grid.appendChild(card);
                     });
-                    if (all.length > BROWSE_CAP) {
-                        const more = document.createElement('div');
-                        more.className = 'browse-card browse-more';
-                        more.textContent = browseExpanded ? 'Show less' : `See all ${all.length} ▸`;
-                        more.addEventListener('click', () => { browseExpanded = !browseExpanded; renderBrowse(); });
-                        grid.appendChild(more);
+                    // Head action: "See all" on the capped band, "Back" in the full view.
+                    const head = tabs.parentElement;
+                    const old = head.querySelector('.browse-head-btn');
+                    if (old) old.remove();
+                    if (allView || all.length > BROWSE_CAP) {
+                        const btn = document.createElement('button');
+                        btn.type = 'button';
+                        btn.className = 'browse-head-btn';
+                        btn.textContent = allView ? '← Back' : `See all ${all.length} ▸`;
+                        btn.addEventListener('click', () => {
+                            currentSource = allView ? { type: 'all' } : { type: 'browseAll', field: browseField };
+                            renderLibrary();
+                        });
+                        head.appendChild(btn);
                     }
                 }
                 function applyFilters(items) {
@@ -416,13 +441,20 @@
                     renderChips();
                     visibleItems = applySort(applyFilters(sourceItems()));
 
-                    // Browse band on "All Tracks"; hero header when a facet is open.
-                    const browseMode = currentSource.type === 'all';
+                    // Browse band on "All Tracks"; dedicated full grid in the
+                    // "browseAll" view; hero header when a facet is open.
+                    const allView = currentSource.type === 'browseAll';
+                    const browseMode = currentSource.type === 'all' || allView;
                     const isBrowse = currentSource.type === 'browse';
+                    if (allView) browseField = currentSource.field || browseField;
                     if ($('libBrowse')) {
                         $('libBrowse').style.display = browseMode ? 'block' : 'none';
                         if (browseMode) renderBrowse();
                     }
+                    // The full-grid view hides the toolbar + track list entirely.
+                    const toolbar = document.querySelector('.lib-toolbar');
+                    if (toolbar) toolbar.style.display = allView ? 'none' : '';
+                    $('libList').style.display = allView ? 'none' : '';
                     if ($('libHero')) {
                         $('libHero').style.display = isBrowse ? 'flex' : 'none';
                         if (isBrowse) {
@@ -436,7 +468,7 @@
                     }
 
                     const list = $('libList'); list.innerHTML = '';
-                    $('libEmpty').style.display = visibleItems.length ? 'none' : 'block';
+                    $('libEmpty').style.display = (visibleItems.length || allView) ? 'none' : 'block';
                     visibleItems.forEach(it => {
                         const title = it.title || it.filename || it.youtube_id;
                         const sub = [(it.artists || []).join(', '), (it.genres || []).join(', '), fmtDur(it.duration)]
@@ -580,10 +612,13 @@
                         }));
                     });
                     // Mobile picker label = current source name.
+                    const facetLabel = (BROWSE_FIELDS.find(([f]) => f === currentSource.field) || [])[1];
                     const active = currentSource.type === 'all'
                         ? 'All Tracks'
-                        : (libPlaylists.find(p => p.id === currentSource.id)?.name
-                           || currentSource.name || 'Playlist');
+                        : currentSource.type === 'browseAll'
+                            ? (facetLabel || 'Browse')
+                            : (libPlaylists.find(p => p.id === currentSource.id)?.name
+                               || currentSource.name || 'Playlist');
                     $('plToggle').innerHTML = `${active} <span>▾</span>`;
                 }
 
@@ -995,8 +1030,14 @@
                     b64 => { libEditCoverBase64 = b64; }, () => libEditResetUrl);
 
                 // Browse hero: Play all (first track; prev/next step the rest) + Back.
+                // Back returns to where the group was opened from (full grid or All Tracks).
                 $('libHeroPlay').addEventListener('click', () => { if (visibleItems.length) libTogglePlay(visibleItems[0].id); });
-                $('libHeroBack').addEventListener('click', () => { currentSource = { type: 'all' }; renderLibrary(); });
+                $('libHeroBack').addEventListener('click', () => {
+                    currentSource = currentSource.from === 'browseAll'
+                        ? { type: 'browseAll', field: currentSource.field }
+                        : { type: 'all' };
+                    renderLibrary();
+                });
 
                 // Hero cover editing: upload a custom facet image / revert to the
                 // first-track cover. (Reuses the playlist-cover resize approach.)

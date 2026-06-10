@@ -7,73 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Releases are cut by pushing a `vX.Y.Z` git tag, which builds and publishes the
 Docker image (`sakhund/youtify:<version>` + `:latest`).
 
-## [Unreleased]
 
-### Added
-- **Play queue** — "Play next" / "Add to queue" in each track's kebab menu; an
-  "Up next" panel in the now-playing aside (click a row to jump, × to remove,
-  Clear to empty). Next/auto-advance consume the queue before falling back to
-  the current filtered list. Session-only.
-- **Sleep timer** — moon button in the now-playing controls: off / 15 / 30 /
-  60 minutes / end of track. End-of-track stops without auto-advancing and
-  keeps the queue.
-- **Play stats** — `play_count` + `last_played` per track, counted once
-  playback passes 30s (or half of a short track). New sort options (Plays,
-  Last played); Added/plays/last-played in the row tooltip. Stats persist in
-  the sidecar, so they survive DB rebuilds and re-saves.
-- **Favorites** — heart on each row, in the now-playing panel, and in the kebab
-  menu; a toolbar ♥ toggle shows favorites only, and `favorite` is a filter
-  field (usable in dynamic playlists). Persisted in the sidecar.
-- **Fast preview** — opt-in toggle next to Turbo: previews render as 128k MP3
-  instead of lossless FLAC (quicker to produce, much smaller). Cached
-  separately per quality; export quality unaffected.
-- **Multi-value Album** — Album is now a chip input. The first value stays the
-  canonical `ALBUM`/`TALB` tag (Jellyfin-compatible) and the DB column; the
-  full list is written as `ALBUMS` (TXXX frame / multi-value Vorbis), indexed
-  for browse/filter/suggestions, and stored in the sidecar (`metadata.albums`).
-- **Editable Browse-by thumbnails** — pencil on the facet hero cover uploads a
-  custom image per Album/Artist/Genre/Year value (stored under
-  `.youtify/facets/`); removable, with fallback to the first track's cover.
-- **Artist default image from the channel pfp** — saving a track whose first
-  artist matches the YouTube channel fetches the channel avatar in the
-  background as that artist's facet image (best-effort).
-- **Copy metadata from another track** — "Copy from…" in both the download form
-  and the library editor opens a searchable picker and fills artists, genres,
-  albums, year, and custom tags (title and cover untouched).
-- **Custom-tag preset keys** — the key field suggests preset keys (Emotion,
-  Mood, Language, BPM, …) merged with keys already in the library; a default
-  empty **Emotion** row replaces the old Composer row on new downloads.
+#  [v2.3.1] - 2026-06-10
 
-### Changed
-- **Generate (batch mixes) removed** — the ⊞ Generate modal and its render
-  queue are gone; A/B mix chips themselves are unchanged.
-- **Composer field removed from the UI** — it's now just a custom tag (an
-  uploaded file's embedded composer still pre-fills one); the backend still
-  maps a `Composer` custom tag to TPE3/COMPOSER.
-- **Library metadata editor parity** — artists, genres, and albums are chip
-  inputs with autocomplete (same as the download form) and respect the tag
-  separator setting (previously hard-coded to `|`).
-- **"New" resets in place** — no full page reload (which landed on the Library
-  in server-save mode); it clears the form and returns to the search view.
-- **Browse-by grid capped at 4 cards** per facet with a "See all N" /
-  "Show less" card.
-- Long metadata chips ellipsize with the full value in a tooltip; the chip ×
-  appears on hover and asks for a confirming second click (turns red, 2.5s);
-  the custom-tag key column is narrower; the `value…` placeholder hides once a
-  chip exists.
+## Changed (Mobile Polish)
+- **Informational mobile mini-bar** — Redesigned as an edge-to-edge layout displaying title, artist, and playback position as a subtle background sweep. Interactive controls (transport, heart, sleep, seek, queue) are offloaded to the full-screen sheet opened by tapping the bar.
+- **Browse "See all" workflow** — Dashed see-all cards are replaced by a compact "See all N ▸" button in the Browse-by header that opens a dedicated full-grid view of that facet, hiding the main toolbar and track list. Picking a card displays that group's tracks, and the hero's `← Back` button returns to the grid.
+- **Horizontal facet navigation** — "Browse by" header layout is locked to a single line on narrow viewports, enabling horizontal scrolling across facet tabs and preventing text wrapping.
+- **Toolbar optimization** — The favorites `♥` toggle is integrated inside the sort group to save vertical layout space on mobile devices.
+- **Browse-by grid caps** — Grid view is capped at 4 cards per facet with an accompanying "See all N" / "Show less" toggle card.
 
-### Fixed
-- Suggestion dropdowns sometimes stayed open after the field lost focus —
-  a capture-phase outside-click handler + Escape now dismiss all of them.
-- **Date added survives restarts** — `created_at` is now threaded from the
-  sidecar into the DB on rebuild (it used to reset to the rebuild time on
-  every startup).
-- Re-saving the same video no longer resets its stats, favorite flag, or
-  date-added (sidecar merge on `/save`).
-- MediaSession (OS media controls) hardening for Firefox/Zen: metadata and
-  handlers re-apply after a user-initiated play, artwork always carries a MIME
-  type, and oversized data-URL artwork is skipped. Note: Zen/hardened Firefox
-  profiles need `media.hardwaremediakeys.enabled=true` for hardware keys/MPRIS.
+## Fixed
+- **Persistent asset creation dates** — `created_at` parameters are threaded from the sidecar back into the database during a rebuild, preventing file ingest times from resetting to the current time on startup.
+- **Safe re-save data merging** — Re-saving an existing video identifier executes a sidecar merge on `/save`, preserving historical play stats, favorite flags, and creation dates.
+- **Dropdown focus handling** — Suggestion dropdowns no longer stick open after losing field focus; a capture-phase outside-click handler and an Escape key listener dismiss them reliably.
+- **Media Session hardening** — Hardened OS media control routines for Firefox and Zen browsers by re-applying metadata and handlers immediately after user-initiated play commands, enforcing explicit MIME types on artwork URLs, and skipping oversized data-URL graphics strings. *(Note: Hardened browser profiles must enable `media.hardwaremediakeys.enabled` for hardware keys and MPRIS integration to function).*
+
+# [v2.3.0] - 2026-06-10
+
+## Added
+- **Play queue** — "Play next" and "Add to queue" entries in each track's kebab menu; an "Up next" panel in the now-playing aside (click a row to jump, `×` to remove, *Clear* to empty). Next/auto-advance actions consume the queue before falling back to the current filtered list. Session-only.
+- **Sleep timer** — Moon button in the now-playing controls supporting off, 15, 30, 60 minutes, or end of track intervals. End-of-track halts playback without auto-advancing and preserves the queue.
+- **Play stats** — Tracks `play_count` and `last_played` per track, incremented once playback passes 30s (or half of a short track). Introduces new sorting options (Plays, Last played) and adds Added/plays/last-played data to the row tooltip. Stats persist in the asset sidecar to survive database rebuilds and re-saves.
+- **Favorites** — Heart toggle on each row, inside the now-playing panel, and in the kebab menu; a toolbar `♥` toggle limits the view to favorites, and favorite is exposed as a filter field for dynamic playlists. Persisted via the sidecar.
+- **Fast preview** — Opt-in toggle next to Turbo that renders previews as 128k MP3 instead of lossless FLAC for quicker, smaller cache files. Cached separately per quality; final export quality is unaffected.
+- **Multi-value Album** — Album field converted to a chip input. The first value acts as the canonical `ALBUM`/`TALB` tag (Jellyfin-compatible) and database column, while the full array is written as `ALBUMS` (TXXX frame / multi-value Vorbis), indexed for browse/filter/suggestions, and stored in the sidecar (`metadata.albums`).
+- **Editable Browse-by thumbnails** — Pencil icon on the facet hero cover allows custom image uploads per Album/Artist/Genre/Year value (stored under `.youtify/facets/`), supporting removal with a fallback to the first track's cover art.
+- **Artist default image from channel profile picture** — Background routine fetches the channel avatar as that artist's facet image on save if the first artist matches the YouTube channel name.
+- **Copy metadata from another track** — "Copy from…" option in the download form and library editor opens a searchable picker to fill artists, genres, albums, year, and custom tags, leaving the title and cover untouched.
+- **Custom-tag preset keys** — Key field suggests preset keys (Emotion, Mood, Language, BPM, etc.) merged with keys already present in the library; a default empty Emotion row replaces the old Composer row on new downloads.
+
+## Changed
+- **Gapless mix switching** — Download-preview player rewritten around two ping-ponging `<audio>` elements. The active node keeps playing while the idle node loads and seeks the newly selected mix; the roles swap once the new element is explicitly emitting audio (its clock advances). This replaces single-element swapping and volume-crossfade attempts, resolving load gaps, doubled/echoed audio, desync, restart-from-0, and dropped silence-trim starts.
+- **Sync positioning** — Resume position computed as `max(range start, current playhead)` clamped to the file, ensuring first play honors the selected/silence-trim start and switches resume in place.
+- **Stream file isolation** — `/stream` endpoint renders to a unique temp file per request using worker PID and UUID combinations, preventing parallel requests from the two audio elements from racing on destructive `os.replace` operations (`FileNotFoundError`).
+- **Streamlined code structure** — Refactored `playPreview` routines into flat named phases and small helpers (`startEl`, `whenReady`, `seekThen`), and stripped out legacy crossfade logic.
+- **Generate (batch mixes) removed** — The `⊞ Generate` modal and its render queue are gone; A/B mix chips themselves remain unchanged.
+- **Composer field removed from UI** — Replaced by standard custom tag mappings, though uploaded files with embedded composer data still pre-fill a row. The backend continues to map a Composer custom tag to `TPE3`/`COMPOSER`.
+- **Library metadata editor parity** — Artists, genres, and albums now use chip inputs with autocomplete mirroring the download form, respecting global tag separator settings rather than hard-coded delimiters.
+- **In-place form reset** — The "New" action clears the form and returns to the search view immediately without a full page reload.
+- **Metadata chip interactions** — Long metadata chips truncate with the full value accessible in a tooltip. The chip removal button appears on hover and requires a second confirmation click (turning red for 2.5s) to prevent accidental deletions. The custom-tag key column is narrower, and the `value…` placeholder hides once a chip exists.
 
 ## [2.2.4] - 2026-06-09
 

@@ -1381,9 +1381,16 @@
 
         /* Browse-by facet cards */
         .lib-browse { margin-bottom: 1rem; }
-        .browse-head { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem; }
-        .browse-by { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); }
-        .browse-tabs { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+        .browse-head { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem; min-width: 0; }
+        .browse-by { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); white-space: nowrap; flex-shrink: 0; }
+        /* Tabs never wrap — they scroll horizontally when space runs out. */
+        .browse-tabs {
+            display: flex; gap: 0.35rem; flex-wrap: nowrap;
+            overflow-x: auto; min-width: 0;
+            scrollbar-width: none;
+        }
+        .browse-tabs::-webkit-scrollbar { display: none; }
+        .browse-tabs .browse-tab { flex-shrink: 0; white-space: nowrap; }
         .browse-tab {
             width: auto; margin: 0; padding: 0.25rem 0.7rem; font-size: 0.74rem; border-radius: 999px;
             background: rgba(255, 255, 255, 0.05); border: 1px solid var(--card-border); color: var(--text-dim);
@@ -1408,14 +1415,16 @@
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .browse-card-count { font-size: 0.68rem; color: var(--text-dim); }
-        /* "See all N" / "Show less" pseudo-card */
-        .browse-card.browse-more {
-            display: flex; align-items: center; justify-content: center;
-            aspect-ratio: 1/1; border-radius: 10px;
-            border: 1px dashed var(--card-border); color: var(--text-dim);
-            font-size: 0.78rem; font-weight: 600;
+        /* Head action button: "See all N ▸" on the capped band / "← Back" in
+           the full-grid view. Sits right-aligned next to the tabs. */
+        .browse-head-btn {
+            margin: 0 0 0 auto; width: auto; flex-shrink: 0;
+            padding: 0.25rem 0.7rem; font-size: 0.72rem; font-weight: 600;
+            border-radius: 999px; white-space: nowrap; cursor: pointer;
+            background: rgba(255, 255, 255, 0.05); border: 1px solid var(--card-border);
+            color: var(--text-dim);
         }
-        .browse-card.browse-more:hover { color: #fff; border-color: rgba(255, 255, 255, 0.3); }
+        .browse-head-btn:hover { color: #fff; border-color: rgba(255, 255, 255, 0.3); }
 
         /* Browse hero header */
         .lib-hero {
@@ -2064,7 +2073,27 @@
                 padding-bottom: 84px;
             }
 
-            /* Now-playing becomes a fixed bottom mini-bar; tap to expand. */
+            /* In the library view the DOCUMENT doesn't scroll — the content
+               area does. Keeps the browser URL bar from collapsing/expanding
+               on scroll, which is what made the fixed mini-bar jitter. */
+            body.lib-locked {
+                height: 100vh;       /* fallback */
+                height: 100dvh;
+                overflow: hidden;
+            }
+            body.lib-locked .content {
+                height: calc(100vh - 58px);   /* below the fixed top bar */
+                height: calc(100dvh - 58px);
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+                overscroll-behavior: contain;
+            }
+
+            /* Now-playing becomes a fixed bottom mini-bar. The bar is purely
+               informational — cover (edge-to-edge left), title/artist, and a
+               subtle background fill that tracks playback position (--np-prog,
+               set from JS). Tap anywhere to expand to the full sheet, which
+               holds all the controls. */
             .now-playing {
                 position: fixed;
                 left: 0;
@@ -2073,16 +2102,29 @@
                 bottom: 0;
                 width: auto;
                 height: auto;
-                max-height: 76px;     /* hard cap — can't balloon to a full-height box */
+                max-height: 64px;     /* hard cap — can't balloon to a full-height box */
                 overflow: hidden;
                 order: 0;
                 z-index: 60;
                 border: none;
                 border-top: 1px solid var(--card-border);
                 border-radius: 0;
-                background: rgba(15, 17, 21, 0.96);
-                backdrop-filter: blur(12px);
-                padding: 0.5rem 0.8rem;
+                /* Near-opaque bg, no backdrop blur: blurring what's behind a
+                   fixed bar re-rasterizes on every scroll frame on mobile and
+                   makes the bar jitter. Solid paint + own compositor layer
+                   keep it rock-steady. */
+                background: rgb(15, 17, 21);
+                transform: translateZ(0);
+                padding: 0;
+            }
+            /* Playback-position sweep: a faint tint that advances with the
+               track, layered over the bar background (text stays readable). */
+            .now-playing:not(.np-expanded) {
+                background:
+                    linear-gradient(90deg,
+                        rgba(255, 0, 80, 0.14) var(--np-prog, 0%),
+                        transparent var(--np-prog, 0%)),
+                    rgb(15, 17, 21);
             }
 
             .now-playing:not(.has-track) {
@@ -2096,20 +2138,25 @@
             .now-playing.has-track #npBody {
                 display: flex;
                 align-items: center;
-                gap: 0.6rem;
+                gap: 0.7rem;
+                height: 64px;
+                padding-right: 0.8rem;   /* left edge is the cover */
             }
 
+            /* Cover bleeds to the bar's full height, flush left. */
             .now-playing .np-cover {
-                width: 44px;
-                height: 44px;
+                width: 64px;
+                height: 64px;
                 aspect-ratio: auto;
                 margin: 0;
                 flex-shrink: 0;
+                border-radius: 0;
+                object-fit: cover;
             }
 
             .now-playing .np-title {
                 margin-top: 0;
-                font-size: 0.85rem;
+                font-size: 0.88rem;
             }
 
             .np-meta {
@@ -2125,6 +2172,11 @@
 
             .now-playing .np-seek,
             .now-playing .np-time {
+                display: none;
+            }
+
+            /* Mini-bar carries no controls — they live in the expanded sheet. */
+            .now-playing:not(.np-expanded) .np-controls {
                 display: none;
             }
 
@@ -2160,12 +2212,15 @@
                 flex-direction: column;
                 gap: 1rem;
                 text-align: center;
+                height: auto;
+                padding-right: 0;
             }
 
             .now-playing.np-expanded .np-cover {
                 width: min(70vw, 320px);
                 height: auto;
                 aspect-ratio: 1 / 1;
+                border-radius: 12px;
             }
 
             .now-playing.np-expanded .np-title {
@@ -2176,9 +2231,14 @@
                 width: 100%;
             }
 
-            .now-playing.np-expanded .np-seek,
-            .now-playing.np-expanded .np-time {
+            .now-playing.np-expanded .np-seek {
                 display: block;
+                width: 100%;
+            }
+
+            /* flex (not block) — keeps current/total times on opposite ends */
+            .now-playing.np-expanded .np-time {
+                display: flex;
                 width: 100%;
             }
 
