@@ -125,7 +125,7 @@
                 els.metaTitle.value = data.title || '';
                 selectedArtists = data.author ? [data.author] : [];
                 renderArtistTags();
-                els.metaAlbum.value = data.album || '';
+                setAlbums(data.album ? [data.album] : []);
                 selectedGenres = data.genre ? String(data.genre).split(/[|,;]/).map(g => g.trim()).filter(Boolean) : [];
                 renderGenreTags();
                 // Uploaded files may carry an embedded cover (a data: URL) — keep it
@@ -133,7 +133,9 @@
                 customThumbnailBase64 = (data.thumbnail && data.thumbnail.startsWith('data:'))
                     ? data.thumbnail.split(',')[1] : null;
                 els.customTagsContainer.innerHTML = '';
-                addCustomTag(els.customTagsContainer, 'Composer', data.composer || '');
+                addCustomTag(els.customTagsContainer, 'Emotion', '');
+                // An uploaded file's embedded composer survives as an ordinary custom tag.
+                if (data.composer) addCustomTag(els.customTagsContainer, 'Composer', data.composer);
 
                 // Year: uploads carry it directly; YouTube gives upload_date YYYYMMDD.
                 if (isUpload) {

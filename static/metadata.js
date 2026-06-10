@@ -6,6 +6,21 @@
             // Artist/Genre fields (native <datalist> didn't open on mobile and
             // looked out of place). Picking a suggestion fills the input. `fieldOrFn`
             // is a /suggestions field name or a function returning one.
+            // Preset custom-tag keys, shown alongside keys already in the library —
+            // a guide for what kind of metadata a tag row can hold.
+            const PRESET_TAG_KEYS = ['Emotion', 'Mood', 'Language', 'BPM', 'Key', 'Rating', 'Composer', 'Instrument', 'Occasion', 'Energy'];
+            function mergeKeySuggestions(libraryKeys, q) {
+                const lf = (q || '').trim().toLowerCase();
+                const presets = PRESET_TAG_KEYS.filter(k => !lf || k.toLowerCase().includes(lf));
+                const seen = new Set();
+                const out = [];
+                [...libraryKeys, ...presets].forEach(k => {
+                    const key = String(k).toLowerCase();
+                    if (!seen.has(key)) { seen.add(key); out.push(k); }
+                });
+                return out;
+            }
+
             function attachSuggest(input, fieldOrFn) {
                 const wrap = document.createElement('span');
                 wrap.className = 'suggest-wrap';
@@ -34,12 +49,18 @@
                 const run = debounce(async () => {
                     const field = (typeof fieldOrFn === 'function') ? fieldOrFn() : fieldOrFn;
                     if (!field) { hide(); return; }
+                    const cur = input.value.trim().toLowerCase();
+                    let list = [];
                     try {
                         const res = await fetch(`/suggestions?field=${encodeURIComponent(field)}&q=${encodeURIComponent(input.value)}`);
-                        if (!res.ok) { hide(); return; }
-                        const cur = input.value.trim().toLowerCase();
-                        renderDD(((await res.json()).suggestions || []).filter(v => String(v).toLowerCase() !== cur));
-                    } catch (e) { hide(); }
+                        if (res.ok) list = (await res.json()).suggestions || [];
+                    } catch (e) { /* offline / browser-download mode -> presets only */ }
+                    // Custom-tag keys: blend in the preset keys as a guide for what
+                    // can go there (library-sourced keys first).
+                    if (field === '__keys__') list = mergeKeySuggestions(list, input.value);
+                    list = list.filter(v => String(v).toLowerCase() !== cur);
+                    if (!list.length) { hide(); return; }
+                    renderDD(list);
                 }, 150);
                 input.addEventListener('input', run);
                 input.addEventListener('focus', run);
@@ -58,7 +79,7 @@
             // comma) -> chip; Backspace on empty removes the last; clicking or
             // arrow+Enter on a suggestion adds it immediately. `suggestField` is a
             // /suggestions field name or a function returning one (per-row key).
-            function makeChipValue(initialValues, suggestField) {
+            function makeChipValue(initialValues, suggestField, onChange) {
                 const wrap = document.createElement('div');
                 wrap.className = 'chip-input';
                 wrap.style.position = 'relative';
@@ -78,16 +99,37 @@
                     values.forEach(v => {
                         const chip = document.createElement('span');
                         chip.className = 'chip';
-                        chip.textContent = v;
+                        chip.title = v;
+                        const label = document.createElement('span');
+                        label.className = 'chip-label';
+                        label.textContent = v;
                         const x = document.createElement('span');
                         x.className = 'chip-x';
                         x.textContent = '×';
-                        x.addEventListener('click', (e) => { e.stopPropagation(); values = values.filter(z => z !== v); render(); fire(); });
-                        chip.appendChild(x);
+                        // Two-click delete: first click arms (chip turns red), second
+                        // within 2.5s removes; anywhere else it disarms.
+                        let confirmTimer = null;
+                        x.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            if (chip.classList.contains('chip-confirm')) {
+                                clearTimeout(confirmTimer);
+                                values = values.filter(z => z !== v);
+                                render(); fire();
+                            } else {
+                                chip.classList.add('chip-confirm');
+                                confirmTimer = setTimeout(() => chip.classList.remove('chip-confirm'), 2500);
+                            }
+                        });
+                        chip.append(label, x);
                         wrap.insertBefore(chip, input);
                     });
+                    // No ghost placeholder once at least one chip is present.
+                    input.placeholder = values.length ? '' : (input.getAttribute('data-ph') || 'value…');
                 }
-                function fire() { if (typeof updateFilenamePreview === 'function') updateFilenamePreview(); }
+                function fire() {
+                    if (onChange) onChange(values.slice());
+                    if (typeof updateFilenamePreview === 'function') updateFilenamePreview();
+                }
                 function add(v) {
                     v = (v || '').trim();
                     if (v && !values.includes(v)) { values.push(v); render(); fire(); }
@@ -140,7 +182,12 @@
                 wrap.appendChild(dd);
                 wrap.addEventListener('click', (e) => { if (e.target === wrap || e.target === input) input.focus(); });
                 render();
-                return { wrap, getValues: () => values.slice(), input };
+                return {
+                    wrap,
+                    getValues: () => values.slice(),
+                    setValues: (vals) => { values = (vals || []).slice(); render(); fire(); },
+                    input,
+                };
             }
 
             function addCustomTag(container, key = '', value = '') {
@@ -170,11 +217,23 @@
             els.addTagBtn.addEventListener('click', () => addCustomTag(els.customTagsContainer));
 
             // Library-sourced autocomplete on the standard metadata fields.
-            attachSuggest(els.metaAlbum, 'album');
             attachSuggest(els.metaYear, 'year');
-            attachSuggest(document.getElementById('libAlbum'), 'album');
             attachSuggest(document.getElementById('libYear'), 'year');
-            attachSuggest(document.getElementById('libComposer'), 'composer');
+
+            // Album is multi-value (chips). The hidden #metaAlbum input keeps the
+            // delimiter-joined string so /save and the filename flow are unchanged;
+            // the backend stores the first value as the canonical ALBUM tag
+            // (Jellyfin-compatible) and the full list as ALBUMS.
+            els.metaAlbum.type = 'hidden';
+            const albumChips = makeChipValue([], 'album', (vals) => {
+                els.metaAlbum.value = vals.join((els.delimiterInput && els.delimiterInput.value) || '|');
+            });
+            albumChips.input.setAttribute('data-ph', 'Album name…');
+            albumChips.input.placeholder = 'Album name…';
+            els.metaAlbum.parentNode.insertBefore(albumChips.wrap, els.metaAlbum);
+            // Used by search.js (source load) and pipeline.js (New/reset).
+            window.setAlbums = (vals) => albumChips.setValues(vals);
+            window.getAlbums = () => albumChips.getValues();
 
             function getCustomTags(container) {
                 const tags = [];
@@ -567,7 +626,7 @@
             function autoFilenameBase() {
                 const title = els.metaTitle.value.trim() || 'Title';
                 const artist = selectedArtists.length > 0 ? selectedArtists.join(', ') : '';
-                const album = els.metaAlbum.value.trim();
+                const album = (getAlbums()[0] || '').trim();   // first album only (canonical)
                 const composer = getCustomTags(els.customTagsContainer).find(t => t.key.toLowerCase() === 'composer')?.value || '';
                 let parts = [title];
                 if (album) parts[0] = `${title} (${album})`;
@@ -599,9 +658,8 @@
             }
 
             // Update filename preview on any metadata field change
-            ['metaTitle', 'metaAlbum'].forEach(id => {
-                els[id].addEventListener('input', updateFilenamePreview);
-            });
+            // (album chips trigger it via their own change hook)
+            els.metaTitle.addEventListener('input', updateFilenamePreview);
             // Also update filename when custom tags change (e.g. Composer)
             els.customTagsContainer.addEventListener('input', updateFilenamePreview);
 
@@ -609,6 +667,8 @@
             els.delimiterInput.addEventListener('input', () => {
                 renderArtistTags();
                 renderGenreTags();
+                // Re-join the hidden album field with the new delimiter.
+                els.metaAlbum.value = albumChips.getValues().join(els.delimiterInput.value || '|');
             });
 
             // Output panel wiring: collapse/expand, format flow, custom filename.
@@ -661,3 +721,101 @@
                 }
                 onEffectChange();
             });
+
+            // --- Global dropdown dismissal ---
+            // The per-input blur handlers use a 150ms grace timeout, which can lose
+            // the race (e.g. blur to a non-focusable element) and leave a dropdown
+            // stuck open. Capture-phase pointerdown + Escape close everything.
+            function hideAllSuggestDropdowns() {
+                document.querySelectorAll('.chip-suggest').forEach(d => { d.style.display = 'none'; });
+                hideArtistDropdown();
+                hideGenreDropdown();
+            }
+            document.addEventListener('pointerdown', (e) => {
+                if (!e.target.closest('.suggest-wrap, .chip-input')) {
+                    document.querySelectorAll('.chip-suggest').forEach(d => { d.style.display = 'none'; });
+                }
+                if (!e.target.closest('#artistContainer, #artistDropdown')) hideArtistDropdown();
+                if (!e.target.closest('#genreContainer, #genreDropdown')) hideGenreDropdown();
+            }, true);
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideAllSuggestDropdowns(); });
+
+            // --- Copy metadata from another saved track ---
+            // Searchable picker over the library; onPick receives the full track
+            // detail (GET /library/{id}). excludeId hides the track being edited.
+            async function openCopyMetaPicker(onPick, excludeId) {
+                let items = [];
+                try {
+                    const res = await fetch('/library');
+                    if (!res.ok) { showError('Library unavailable'); return; }
+                    items = (await res.json()).items || [];
+                } catch (e) { showError('Library unavailable'); return; }
+                items = items.filter(it => it.id !== excludeId);
+
+                const ov = document.createElement('div');
+                ov.className = 'copy-overlay';
+                ov.innerHTML = `
+                    <div class="copy-panel" role="dialog" aria-modal="true">
+                        <h3>Copy metadata from…</h3>
+                        <input type="text" class="copy-search" placeholder="Search tracks…" autocomplete="off">
+                        <div class="copy-list"></div>
+                    </div>`;
+                document.body.appendChild(ov);
+                const search = ov.querySelector('.copy-search');
+                const list = ov.querySelector('.copy-list');
+                const close = () => ov.remove();
+                ov.addEventListener('click', e => { if (e.target === ov) close(); });
+                document.addEventListener('keydown', function esc(e) {
+                    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); }
+                });
+
+                function renderList(q) {
+                    const lf = (q || '').toLowerCase();
+                    const matches = items.filter(it => {
+                        const hay = [it.title, (it.artists || []).join(' '), it.album].filter(Boolean).join(' ').toLowerCase();
+                        return !lf || hay.includes(lf);
+                    }).slice(0, 50);
+                    list.innerHTML = '';
+                    if (!matches.length) {
+                        list.innerHTML = '<div class="copy-empty">No matching tracks.</div>';
+                        return;
+                    }
+                    matches.forEach(it => {
+                        const row = document.createElement('div');
+                        row.className = 'copy-row';
+                        const img = document.createElement('img');
+                        img.src = `/library/${it.id}/cover?v=${encodeURIComponent(it.updated_at || '')}`;
+                        img.onerror = () => { img.style.visibility = 'hidden'; };
+                        const txt = document.createElement('div');
+                        txt.className = 'copy-row-text';
+                        txt.innerHTML = `<div class="copy-row-title"></div><div class="copy-row-sub"></div>`;
+                        txt.querySelector('.copy-row-title').textContent = it.title || it.filename || it.id;
+                        txt.querySelector('.copy-row-sub').textContent = (it.artists || []).join(', ');
+                        row.append(img, txt);
+                        row.addEventListener('click', async () => {
+                            try {
+                                const res = await fetch('/library/' + it.id);
+                                if (!res.ok) { showError('Track not found'); return; }
+                                onPick(await res.json());
+                                close();
+                            } catch (e) { showError(e.message); }
+                        });
+                        list.appendChild(row);
+                    });
+                }
+                search.addEventListener('input', () => renderList(search.value));
+                renderList('');
+                search.focus();
+            }
+
+            // Download form: fill everything except title + cover.
+            const copyMetaBtn = document.getElementById('copyMetaBtn');
+            if (copyMetaBtn) copyMetaBtn.addEventListener('click', () => openCopyMetaPicker((d) => {
+                selectedArtists = (d.artists || []).slice(); renderArtistTags();
+                selectedGenres = (d.genres || []).slice(); renderGenreTags();
+                setAlbums(d.albums && d.albums.length ? d.albums : (d.album ? [d.album] : []));
+                els.metaYear.value = d.year || '';
+                els.customTagsContainer.innerHTML = '';
+                Object.entries(d.custom_fields || {}).forEach(([k, v]) => addCustomTag(els.customTagsContainer, k, v));
+                updateFilenamePreview();
+            }));

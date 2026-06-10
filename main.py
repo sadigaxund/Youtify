@@ -1,4 +1,5 @@
 import os
+import re
 import tempfile
 import uuid
 import shutil
@@ -74,6 +75,7 @@ from youtube_downloader import (
     validate_youtube_url, download_youtube_audio, get_video_info,
     archive_original, retag_mp3_in_place, reprocess_from_original,
     find_original, get_audio_duration, read_cover, normalize_cover,
+    fetch_channel_avatar,
 )
 
 # Import the database module
@@ -163,6 +165,7 @@ DOWNLOAD_DIR = None
 ORIGINALS_DIR = None
 META_DIR = None
 PLAYLISTS_DIR = None
+FACETS_DIR = None
 _startup_warning = None
 
 if not BROWSER_DOWNLOAD_MODE:
@@ -183,9 +186,11 @@ if not BROWSER_DOWNLOAD_MODE:
     ORIGINALS_DIR = os.path.join(DOWNLOAD_DIR, ".youtify", "originals")
     META_DIR = os.path.join(DOWNLOAD_DIR, ".youtify", "meta")
     PLAYLISTS_DIR = os.path.join(DOWNLOAD_DIR, ".youtify", "playlists")
+    FACETS_DIR = os.path.join(DOWNLOAD_DIR, ".youtify", "facets")
     os.makedirs(ORIGINALS_DIR, exist_ok=True)
     os.makedirs(META_DIR, exist_ok=True)
     os.makedirs(PLAYLISTS_DIR, exist_ok=True)
+    os.makedirs(FACETS_DIR, exist_ok=True)
 
 
 
@@ -345,6 +350,58 @@ def read_sidecar(video_id: str) -> Optional[dict]:
 
 def playlist_sidecar_path(pid: str) -> str:
     return os.path.join(PLAYLISTS_DIR, f"{pid}.json")
+
+
+# --- Facet covers (custom thumbnails for Browse-by Album/Artist/Genre/Year) ---
+# Stored as <save-dir>/.youtify/facets/<field>/<slug>.jpg with a per-field
+# index.json mapping slug -> original value (the frontend never computes slugs).
+
+FACET_FIELDS = ("album", "artist", "genre", "year")
+
+
+def _facet_slug(value: str) -> str:
+    import hashlib
+    base = re.sub(r"[^a-z0-9]+", "-", (value or "").lower()).strip("-") or "x"
+    return f"{base[:60]}-{hashlib.md5(value.encode('utf-8')).hexdigest()[:6]}"
+
+
+def _facet_dir(field: str) -> str:
+    if field not in FACET_FIELDS:
+        raise HTTPException(status_code=422, detail=f"field must be one of {FACET_FIELDS}")
+    d = os.path.join(FACETS_DIR, field)
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _facet_index_read(field: str) -> dict:
+    path = os.path.join(_facet_dir(field), "index.json")
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
+
+
+def _facet_index_write(field: str, index: dict):
+    path = os.path.join(_facet_dir(field), "index.json")
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(index, fh, indent=2, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+def save_facet_cover(field: str, value: str, jpeg_bytes: bytes):
+    """Write a facet cover image + register it in the field's index."""
+    slug = _facet_slug(value)
+    with open(os.path.join(_facet_dir(field), f"{slug}.jpg"), "wb") as fh:
+        fh.write(jpeg_bytes)
+    idx = _facet_index_read(field)
+    idx[slug] = value
+    _facet_index_write(field, idx)
+
+
+def facet_cover_path(field: str, value: str) -> str:
+    return os.path.join(_facet_dir(field), f"{_facet_slug(value)}.jpg")
 
 
 def playlist_cover_path(pid: str) -> str:
@@ -625,6 +682,12 @@ def save_audio(
              if t.get('key', '').lower() == 'composer'), None)
         composer = meta_composer or composer_from_json
 
+        # Album is multi-value: the first one is canonical (filename, DB column,
+        # standard ALBUM tag — Jellyfin-compatible); the full list goes to the
+        # sidecar + an extra ALBUMS tag (handled by the embedders).
+        albums = split_multi(meta_album, delimiter)
+        meta_album_first = albums[0] if albums else None
+
         # 4. Build filename "Title (Album) - Artist (Composer).<fmt>", or use the
         #    user's custom override (sanitized; extension still from the format).
         if custom_filename and custom_filename.strip():
@@ -633,7 +696,7 @@ def save_audio(
             title_for_name = meta_title
             if not title_for_name:
                 title_for_name = get_video_info(url).get('title', video_id) if not is_upload else video_id
-            filename_to_use = build_filename(title_for_name, meta_album, meta_artist, composer, delimiter, ext=out_fmt)
+            filename_to_use = build_filename(title_for_name, meta_album_first, meta_artist, composer, delimiter, ext=out_fmt)
 
         # 5. Determine output directory based on mode
         if BROWSER_DOWNLOAD_MODE:
@@ -707,6 +770,12 @@ def save_audio(
                 }
                 artists = split_multi(meta_artist, delimiter)
                 genres = split_multi(meta_genre, delimiter)
+                # Re-saving the same video must not reset its stats, favorite
+                # flag, or date-added — carry them over from any prior sidecar.
+                prev = read_sidecar(video_id) or {}
+                stats = prev.get("stats") or {"play_count": 0, "last_played": None}
+                favorite = bool(prev.get("favorite", False))
+                created_at = prev.get("created_at") or datetime.datetime.now().isoformat()
                 sidecar = {
                     "schema_version": 1,
                     "youtube_id": video_id,
@@ -717,27 +786,39 @@ def save_audio(
                     "duration": duration,
                     "effects": effects,
                     "metadata": {
-                        "title": meta_title, "album": meta_album, "year": meta_year,
+                        "title": meta_title, "album": meta_album_first, "albums": albums,
+                        "year": meta_year,
                         "composer": meta_composer, "artists": artists, "genres": genres,
                         "delimiter": delimiter, "custom_tags": custom_tags,
                     },
-                    "created_at": datetime.datetime.now().isoformat(),
+                    "stats": stats,
+                    "favorite": favorite,
+                    "created_at": created_at,
                     "updated_at": datetime.datetime.now().isoformat(),
                 }
                 write_sidecar(video_id, sidecar)
 
                 db.upsert_audio(
-                    youtube_id=video_id, title=meta_title, album=meta_album,
+                    youtube_id=video_id, title=meta_title, album=meta_album_first,
                     year=meta_year, duration=duration,
                     rel_path=sidecar["rel_path"], filename=final_filename,
                     sidecar_path=f"{video_id}.json", effects=effects,
-                    artists=artists, genres=genres,
+                    artists=artists, genres=genres, albums=albums,
                     custom_fields={t["key"]: t.get("value")
                                    for t in custom_tags if t.get("key")},
+                    play_count=stats.get("play_count", 0),
+                    last_played=stats.get("last_played"),
+                    favorite=favorite,
+                    created_at=created_at.replace("T", " ")[:19],
                 )
             except Exception as e:
                 log.warning("Failed to archive/index metadata: %s", e)
-        
+
+            # Default artist image from the channel pfp (background, best-effort).
+            first_artist = (split_multi(meta_artist, delimiter) or [None])[0]
+            if url and first_artist:
+                background_tasks.add_task(fetch_artist_pfp_task, url, first_artist)
+
         # 7. Final progress update
         download_progress[session_id] = {
             "status": "finished", 
@@ -827,6 +908,7 @@ def stream_audio(
     enhance_intensity: float = Query(1.5),
     original: bool = Query(False),
     turbo: bool = Query(False),
+    quality: str = Query("hq", description="Preview quality: hq (lossless FLAC) | fast (128k MP3)"),
 ):
     """
     Preview the FULL track with the chosen effects applied — but WITHOUT range
@@ -843,13 +925,18 @@ def stream_audio(
         video_id, source_path = resolve_source(url, source_id)
 
         # Hash the effect set so identical settings reuse the same rendered file.
+        # Fast previews get their own cache file (different codec/extension).
+        quality = quality if quality in ("hq", "fast") else "hq"
         key = f"{eq_preset}|{mbc_preset}|{enhance_mode}|{enhance_intensity}|{normalize}|{normalize_i}|{original}"
         h = hashlib.md5(key.encode()).hexdigest()[:10]
-        out = os.path.join(CACHE_DIR, f"prev_{video_id}_{h}.flac")
+        out = os.path.join(CACHE_DIR,
+                           f"prev_{video_id}_{h}_fast.mp3" if quality == "fast"
+                           else f"prev_{video_id}_{h}.flac")
+        media_type = "audio/mpeg" if quality == "fast" else "audio/flac"
 
         # Fast path: already rendered — serve it straight away.
         if os.path.exists(out) and os.path.getsize(out) > 1024:
-            return FileResponse(out, media_type="audio/flac")
+            return FileResponse(out, media_type=media_type)
 
         # First render: ensure the source is cached, then gate on duration.
         try:
@@ -877,7 +964,7 @@ def stream_audio(
                 eq_preset=eq_preset, mbc_preset=mbc_preset,
                 enhance_mode=enhance_mode, enhance_intensity=enhance_intensity,
                 normalize=normalize, normalize_i=normalize_i, original=original,
-                use_checkpoints=turbo,
+                use_checkpoints=turbo, quality=quality,
             )
             # If a concurrent request already published `out`, drop ours; else
             # atomically publish. os.replace is atomic, so a late writer simply
@@ -892,7 +979,7 @@ def stream_audio(
                 try: os.remove(tmp)
                 except OSError: pass
 
-        return FileResponse(out, media_type="audio/flac")
+        return FileResponse(out, media_type=media_type)
     except HTTPException:
         raise
     except Exception as e:
@@ -1006,7 +1093,13 @@ def library_patch(audio_id: int, payload: dict = Body(...)):
     delimiter = payload.get("delimiter") or sidecar.get("metadata", {}).get("delimiter", "|")
 
     title = payload.get("title", detail.get("title"))
-    album = payload.get("album", detail.get("album"))
+    # Albums: prefer the multi-value list; fall back to the single `album`.
+    albums = payload.get("albums")
+    if albums is None:
+        single = payload.get("album", detail.get("album"))
+        albums = detail.get("albums") if "album" not in payload else ([single] if single else [])
+    albums = [a for a in (albums or []) if str(a).strip()]
+    album = albums[0] if albums else None
     year = payload.get("year", detail.get("year"))
     artists = payload.get("artists", detail.get("artists", []))
     genres = payload.get("genres", detail.get("genres", []))
@@ -1039,7 +1132,7 @@ def library_patch(audio_id: int, payload: dict = Body(...)):
     user_metadata = {"delimiter": delimiter}
     if title: user_metadata["title"] = title
     if artist_str: user_metadata["artist"] = artist_str
-    if album: user_metadata["album"] = album
+    if albums: user_metadata["album"] = delimiter.join(albums)   # embedders split: first -> ALBUM, all -> ALBUMS
     if genre_str: user_metadata["genre"] = genre_str
     if year: user_metadata["year"] = year
     if composer: user_metadata["composer"] = composer
@@ -1065,7 +1158,8 @@ def library_patch(audio_id: int, payload: dict = Body(...)):
     sidecar["rel_path"] = new_rel
     sidecar["filename"] = new_filename
     sidecar["metadata"] = {
-        "title": title, "album": album, "year": year, "composer": composer,
+        "title": title, "album": album, "albums": albums, "year": year,
+        "composer": composer,
         "artists": artists, "genres": genres, "delimiter": delimiter,
         "custom_tags": custom_tags,
     }
@@ -1076,10 +1170,44 @@ def library_patch(audio_id: int, payload: dict = Body(...)):
         youtube_id=video_id, title=title, album=album, year=year,
         duration=sidecar.get("duration", detail.get("duration")),
         rel_path=new_rel, filename=new_filename, sidecar_path=f"{video_id}.json",
-        effects=eff, artists=artists, genres=genres,
+        effects=eff, artists=artists, genres=genres, albums=albums,
         custom_fields={t["key"]: t.get("value") for t in custom_tags if t.get("key")},
     )
     return db.get_audio_detail(audio_id)
+
+
+@app.post("/library/{audio_id}/played")
+def library_played(audio_id: int):
+    """
+    Record one play: bump the DB counters and mirror them into the sidecar
+    (the sidecar is the source of truth, so stats survive a DB rebuild).
+    Deliberately does NOT touch updated_at — that drives cover cache-busting.
+    """
+    _require_library()
+    stats = db.bump_play(audio_id)
+    if not stats:
+        raise HTTPException(status_code=404, detail="Track not found")
+    sidecar = read_sidecar(stats["youtube_id"])
+    if sidecar is not None:
+        sidecar["stats"] = {"play_count": stats["play_count"],
+                            "last_played": stats["last_played"]}
+        write_sidecar(stats["youtube_id"], sidecar)
+    return {"play_count": stats["play_count"], "last_played": stats["last_played"]}
+
+
+@app.patch("/library/{audio_id}/favorite")
+def library_favorite(audio_id: int, payload: dict = Body(...)):
+    """Set/unset favorite; mirrored into the sidecar like play stats."""
+    _require_library()
+    fav = bool(payload.get("favorite"))
+    youtube_id = db.set_favorite(audio_id, fav)
+    if not youtube_id:
+        raise HTTPException(status_code=404, detail="Track not found")
+    sidecar = read_sidecar(youtube_id)
+    if sidecar is not None:
+        sidecar["favorite"] = fav
+        write_sidecar(youtube_id, sidecar)
+    return {"favorite": fav}
 
 
 @app.post("/library/{audio_id}/reprocess")
@@ -1394,6 +1522,80 @@ def playlist_cover(pid: str):
                         headers={"Cache-Control": "public, max-age=604800"})
 
 
+# --- Facet cover endpoints (custom Browse-by thumbnails) ---
+
+@app.get("/facets")
+def facets_list():
+    """Which facet values have a custom cover: {field: [value, ...]}."""
+    _require_library()
+    return {f: sorted(_facet_index_read(f).values()) for f in FACET_FIELDS}
+
+
+@app.get("/facets/{field}/{value}/cover")
+def facet_cover(field: str, value: str):
+    _require_library()
+    path = facet_cover_path(field, value)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="No cover")
+    return FileResponse(path, media_type="image/jpeg",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.put("/facets/{field}/{value}/cover")
+def facet_cover_put(field: str, value: str, payload: dict = Body(...)):
+    _require_library()
+    b64 = payload.get("cover_base64")
+    if not b64:
+        raise HTTPException(status_code=422, detail="cover_base64 required")
+    try:
+        raw = base64.b64decode(b64)
+    except Exception:
+        raise HTTPException(status_code=422, detail="Invalid base64 image")
+    data, _mime = normalize_cover(raw)
+    if not data:
+        raise HTTPException(status_code=422, detail="Could not decode image")
+    save_facet_cover(field, value, data)
+    return {"status": "ok"}
+
+
+@app.delete("/facets/{field}/{value}/cover")
+def facet_cover_delete(field: str, value: str):
+    _require_library()
+    slug = _facet_slug(value)
+    path = os.path.join(_facet_dir(field), f"{slug}.jpg")
+    if os.path.exists(path):
+        try:
+            os.remove(path)
+        except OSError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    idx = _facet_index_read(field)
+    if slug in idx:
+        idx.pop(slug)
+        _facet_index_write(field, idx)
+    return {"status": "ok"}
+
+
+def fetch_artist_pfp_task(url: str, artist: str):
+    """
+    Background task at save time: if the saved track's first artist IS the
+    YouTube channel uploader and that artist has no facet cover yet, pull the
+    channel avatar as the artist's default image. Best-effort — any failure
+    just means the facet keeps its track-cover fallback.
+    """
+    try:
+        if os.path.exists(facet_cover_path("artist", artist)):
+            return
+        info = get_video_info(url)
+        if (info.get("author") or "").strip().lower() != artist.strip().lower():
+            return  # saved artist isn't the channel — don't guess
+        data = fetch_channel_avatar(info.get("channel_id"), max_side=600)
+        if data:
+            save_facet_cover("artist", artist, data)
+            log.info("Saved channel avatar as default image for artist %r", artist)
+    except Exception as e:
+        log.warning("artist pfp fetch failed: %s", e)
+
+
 @app.get("/suggestions")
 def suggestions(kind: Optional[str] = Query(None), field: Optional[str] = Query(None),
                 q: str = Query("")):
@@ -1405,6 +1607,15 @@ def suggestions(kind: Optional[str] = Query(None), field: Optional[str] = Query(
     """
     if kind in ("artist", "genre"):
         return {"suggestions": db.suggest_tags(kind, q)}
+    if field in ("artist", "genre"):
+        return {"suggestions": db.suggest_tags(field, q)}
+    if field == "album":
+        # Union of multi-value album tags and the legacy single-album column.
+        out, seen = [], set()
+        for v in db.suggest_tags("album", q) + db.suggest_values("album", q):
+            if v.lower() not in seen:
+                seen.add(v.lower()); out.append(v)
+        return {"suggestions": out[:10]}
     if field == "__keys__":
         return {"suggestions": db.suggest_custom_keys(q)}
     if field:

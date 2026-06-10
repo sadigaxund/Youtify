@@ -17,11 +17,11 @@ Functions freely cross-reference across files without import/export.
 | `app.js` | State vars, `els` DOM references, utils (`setLoading`, `showError`, `showToast`) |
 | `pipeline.js` | Download progress steps, process flow |
 | `thumbnail.js` | Cover uploader (`wireCover`) |
-| `metadata.js` | Tags, multi-value chip inputs (artist/genre/composer/custom), autocomplete, Output & technical panel (format flow, tag separator, custom filename) |
+| `metadata.js` | Tags, multi-value chip inputs (artist/genre/album/custom), autocomplete + preset tag keys, copy-metadata picker, Output & technical panel (format flow, tag separator, custom filename) |
 | `search.js` | YouTube search, file upload, `onSourceReady` |
-| `mixer.js` | A/B compare snapshots, batch combo generator |
+| `mixer.js` | A/B compare snapshots |
 | `preview.js` | Range slider, audio player, OS media session, `onEffectChange` |
-| `library.js` | Library view, playlists, filter/sort, Browse-by facet grid + hero (IIFE-wrapped) |
+| `library.js` | Library view, playlists, filter/sort, Browse-by facet grid + hero + editable facet covers, play queue, sleep timer, stats/favorites (IIFE-wrapped) |
 
 **Key patterns:**
 - `els.xxx` = cached `document.getElementById('xxx')`
@@ -32,11 +32,12 @@ Functions freely cross-reference across files without import/export.
 ## Backend (`main.py`)
 
 - `GET /` serves `static/index.html`
-- `GET /stream` — live preview with effects (FLAC cached)
+- `GET /stream` — live preview with effects (FLAC cached; `quality=fast` → 128k MP3)
 - `POST /save` — download + process + save
 - `POST /upload` — local file ingest
-- `GET|POST|PATCH|DELETE /library/*` — saved tracks
+- `GET|POST|PATCH|DELETE /library/*` — saved tracks; `POST /library/{id}/played` + `PATCH /library/{id}/favorite` for stats (sidecar-backed, survive DB rebuilds)
 - `GET|POST|PATCH|DELETE /playlists/*` — playlists
+- `GET|PUT|DELETE /facets/{field}/{value}/cover` — custom Browse-by thumbnails (`.youtify/facets/`)
 
 ## Docker / CI
 

@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Releases are cut by pushing a `vX.Y.Z` git tag, which builds and publishes the
 Docker image (`sakhund/youtify:<version>` + `:latest`).
 
+## [Unreleased]
+
+### Added
+- **Play queue** — "Play next" / "Add to queue" in each track's kebab menu; an
+  "Up next" panel in the now-playing aside (click a row to jump, × to remove,
+  Clear to empty). Next/auto-advance consume the queue before falling back to
+  the current filtered list. Session-only.
+- **Sleep timer** — moon button in the now-playing controls: off / 15 / 30 /
+  60 minutes / end of track. End-of-track stops without auto-advancing and
+  keeps the queue.
+- **Play stats** — `play_count` + `last_played` per track, counted once
+  playback passes 30s (or half of a short track). New sort options (Plays,
+  Last played); Added/plays/last-played in the row tooltip. Stats persist in
+  the sidecar, so they survive DB rebuilds and re-saves.
+- **Favorites** — heart on each row, in the now-playing panel, and in the kebab
+  menu; a toolbar ♥ toggle shows favorites only, and `favorite` is a filter
+  field (usable in dynamic playlists). Persisted in the sidecar.
+- **Fast preview** — opt-in toggle next to Turbo: previews render as 128k MP3
+  instead of lossless FLAC (quicker to produce, much smaller). Cached
+  separately per quality; export quality unaffected.
+- **Multi-value Album** — Album is now a chip input. The first value stays the
+  canonical `ALBUM`/`TALB` tag (Jellyfin-compatible) and the DB column; the
+  full list is written as `ALBUMS` (TXXX frame / multi-value Vorbis), indexed
+  for browse/filter/suggestions, and stored in the sidecar (`metadata.albums`).
+- **Editable Browse-by thumbnails** — pencil on the facet hero cover uploads a
+  custom image per Album/Artist/Genre/Year value (stored under
+  `.youtify/facets/`); removable, with fallback to the first track's cover.
+- **Artist default image from the channel pfp** — saving a track whose first
+  artist matches the YouTube channel fetches the channel avatar in the
+  background as that artist's facet image (best-effort).
+- **Copy metadata from another track** — "Copy from…" in both the download form
+  and the library editor opens a searchable picker and fills artists, genres,
+  albums, year, and custom tags (title and cover untouched).
+- **Custom-tag preset keys** — the key field suggests preset keys (Emotion,
+  Mood, Language, BPM, …) merged with keys already in the library; a default
+  empty **Emotion** row replaces the old Composer row on new downloads.
+
+### Changed
+- **Generate (batch mixes) removed** — the ⊞ Generate modal and its render
+  queue are gone; A/B mix chips themselves are unchanged.
+- **Composer field removed from the UI** — it's now just a custom tag (an
+  uploaded file's embedded composer still pre-fills one); the backend still
+  maps a `Composer` custom tag to TPE3/COMPOSER.
+- **Library metadata editor parity** — artists, genres, and albums are chip
+  inputs with autocomplete (same as the download form) and respect the tag
+  separator setting (previously hard-coded to `|`).
+- **"New" resets in place** — no full page reload (which landed on the Library
+  in server-save mode); it clears the form and returns to the search view.
+- **Browse-by grid capped at 4 cards** per facet with a "See all N" /
+  "Show less" card.
+- Long metadata chips ellipsize with the full value in a tooltip; the chip ×
+  appears on hover and asks for a confirming second click (turns red, 2.5s);
+  the custom-tag key column is narrower; the `value…` placeholder hides once a
+  chip exists.
+
+### Fixed
+- Suggestion dropdowns sometimes stayed open after the field lost focus —
+  a capture-phase outside-click handler + Escape now dismiss all of them.
+- **Date added survives restarts** — `created_at` is now threaded from the
+  sidecar into the DB on rebuild (it used to reset to the rebuild time on
+  every startup).
+- Re-saving the same video no longer resets its stats, favorite flag, or
+  date-added (sidecar merge on `/save`).
+- MediaSession (OS media controls) hardening for Firefox/Zen: metadata and
+  handlers re-apply after a user-initiated play, artwork always carries a MIME
+  type, and oversized data-URL artwork is skipped. Note: Zen/hardened Firefox
+  profiles need `media.hardwaremediakeys.enabled=true` for hardware keys/MPRIS.
+
 ## [2.2.4] - 2026-06-09
 
 ### Added

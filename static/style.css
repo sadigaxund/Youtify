@@ -172,11 +172,28 @@
             padding: 0.15rem 0.45rem; font-size: 0.7rem; border-radius: 6px;
             background: rgba(100, 140, 255, 0.15); border: 1px solid rgba(100, 140, 255, 0.3);
             color: rgba(150, 175, 255, 1); white-space: nowrap;
+            max-width: 100%;
         }
-        .chip-x { cursor: pointer; opacity: 0.7; font-size: 0.95em; }
-        .chip-x:hover { opacity: 1; }
+        /* Long values ellipsize instead of spilling out of the box. */
+        .chip-label {
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            max-width: 200px; min-width: 0;
+        }
+        /* × shows on chip hover (always visible on touch devices). */
+        .chip-x { cursor: pointer; opacity: 0; font-size: 0.95em; flex-shrink: 0; transition: opacity .15s; }
+        .chip:hover .chip-x { opacity: 0.7; }
+        .chip:hover .chip-x:hover { opacity: 1; }
+        @media (hover: none) { .chip-x { opacity: 0.7; } }
+        /* Armed delete confirmation (first × click) — turns red, second click removes. */
+        .chip.chip-confirm {
+            background: rgba(255, 0, 80, 0.18); border-color: rgba(255, 0, 80, 0.5);
+            color: rgba(255, 130, 160, 1);
+        }
+        .chip.chip-confirm .chip-x { opacity: 1; }
         /* Wrapper that gives single-input autocompletes a positioning context. */
         .suggest-wrap { position: relative; display: block; flex: 1 1 auto; min-width: 0; }
+        /* Custom-tag rows: the key column stays narrow next to the value chips. */
+        .custom-tag-row > .suggest-wrap { flex: 0 0 28%; }
         /* Suggestion dropdown for chip inputs (matches Artist/Genre styling). */
         .chip-suggest {
             position: absolute; left: 0; right: 0; top: calc(100% + 2px); z-index: 100;
@@ -196,6 +213,36 @@
             background: rgba(255, 0, 80, 0.15); border: 1px solid rgba(255, 0, 80, 0.3);
             display: flex; align-items: center; justify-content: center;
         }
+
+        /* "Copy metadata from…" picker */
+        .copy-overlay {
+            position: fixed; inset: 0; z-index: 1000;
+            background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(4px);
+            display: flex; align-items: center; justify-content: center;
+            padding: 1rem;
+        }
+        .copy-panel {
+            background: #16181f; border: 1px solid var(--card-border);
+            border-radius: 14px; width: min(480px, 96vw); max-height: 80vh;
+            display: flex; flex-direction: column; gap: 0.7rem;
+            padding: 1.2rem 1.3rem; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+        }
+        .copy-panel h3 { margin: 0; font-size: 1.05rem; }
+        .copy-search {
+            padding: 0.5rem 0.7rem; font-size: 0.82rem; border-radius: 8px;
+            background: rgba(255, 255, 255, 0.03); border: 1px solid var(--card-border); color: #fff;
+        }
+        .copy-list { overflow-y: auto; display: flex; flex-direction: column; }
+        .copy-row {
+            display: flex; align-items: center; gap: 0.6rem; padding: 0.45rem 0.4rem;
+            border-radius: 8px; cursor: pointer;
+        }
+        .copy-row:hover { background: rgba(255, 255, 255, 0.06); }
+        .copy-row img { width: 36px; height: 36px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+        .copy-row-text { min-width: 0; }
+        .copy-row-title { font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .copy-row-sub { font-size: 0.7rem; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .copy-empty { font-size: 0.78rem; color: var(--text-dim); padding: 0.6rem 0.4rem; }
 
         /* Output & technical collapsible panel (above the action buttons) */
         .tech-panel {
@@ -922,53 +969,6 @@
             overflow-y: auto;
         }
 
-        /* Batch "Generate combos" picker */
-        .gen-overlay {
-            position: fixed; inset: 0; z-index: 1000;
-            background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(4px);
-            display: flex; align-items: center; justify-content: center;
-            padding: 1rem;
-        }
-        /* Solid (opaque) panel — --card-bg is translucent, which made it unreadable. */
-        .gen-panel {
-            background: #16181f; border: 1px solid var(--card-border);
-            border-radius: 14px; width: min(540px, 96vw); max-height: 86vh; overflow-y: auto;
-            padding: 1.2rem 1.3rem; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
-        }
-        .gen-panel h3 { margin: 0 0 0.2rem; font-size: 1.05rem; }
-        .gen-panel .gen-sub { color: var(--text-dim); font-size: 0.78rem; margin-bottom: 1rem; }
-        /* Each dimension: aligned label column + wrapping option pills. */
-        .gen-dim {
-            display: grid; grid-template-columns: 94px 1fr; align-items: center; gap: 0.7rem;
-            padding: 0.55rem 0; border-top: 1px solid rgba(255, 255, 255, 0.06);
-        }
-        .gen-dim:first-of-type { border-top: none; padding-top: 0; }
-        .gen-dim > label { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-dim); }
-        .gen-opts { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-        .gen-opt {
-            display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; line-height: 1.4;
-            padding: 0.25rem 0.75rem; border: 1px solid var(--card-border); border-radius: 999px;
-            cursor: pointer; user-select: none; white-space: nowrap;
-            background: rgba(255, 255, 255, 0.03); color: rgba(255, 255, 255, 0.85);
-            transition: background .12s, border-color .12s;
-        }
-        .gen-opt:hover { border-color: rgba(255, 255, 255, 0.3); }
-        .gen-opt:has(input:checked) { background: rgba(255, 0, 80, 0.16); border-color: var(--primary); color: #fff; }
-        .gen-opt input { accent-color: var(--primary); margin: 0; width: 0.9rem; height: 0.9rem; flex-shrink: 0; }
-        .gen-foot {
-            display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
-            margin-top: 1rem; padding-top: 0.9rem; border-top: 1px solid var(--card-border);
-            position: sticky; bottom: -1.2rem; background: #16181f;
-        }
-        .gen-count { font-size: 0.82rem; color: var(--text-dim); }
-        .gen-foot button { width: auto; margin: 0; padding: 0.45rem 1rem; font-size: 0.82rem; border-radius: 8px; }
-        /* Queue progress chip next to "Mixes" */
-        .gen-progress {
-            font-size: 0.66rem; font-weight: 700; color: var(--primary);
-            background: rgba(255, 0, 80, 0.12); border: 1px solid rgba(255, 0, 80, 0.3);
-            border-radius: 999px; padding: 0.05rem 0.4rem; margin-left: 0.35rem;
-        }
-
         .ab-empty {
             font-size: 0.72rem;
             color: var(--text-dim);
@@ -1408,6 +1408,14 @@
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .browse-card-count { font-size: 0.68rem; color: var(--text-dim); }
+        /* "See all N" / "Show less" pseudo-card */
+        .browse-card.browse-more {
+            display: flex; align-items: center; justify-content: center;
+            aspect-ratio: 1/1; border-radius: 10px;
+            border: 1px dashed var(--card-border); color: var(--text-dim);
+            font-size: 0.78rem; font-weight: 600;
+        }
+        .browse-card.browse-more:hover { color: #fff; border-color: rgba(255, 255, 255, 0.3); }
 
         /* Browse hero header */
         .lib-hero {
@@ -1421,6 +1429,18 @@
             box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45); background: rgba(255, 255, 255, 0.05);
         }
         .lib-hero-cover.circ { border-radius: 50%; }
+        /* Pencil overlay on the hero cover (custom facet image editing) */
+        .lib-hero-cover-wrap { position: relative; flex-shrink: 0; }
+        .lib-hero-cover-edit {
+            position: absolute; right: 6px; bottom: 6px;
+            width: 28px; height: 28px; padding: 0; margin: 0;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 50%; background: rgba(0, 0, 0, 0.65);
+            border: 1px solid var(--card-border); color: #fff;
+            opacity: 0; transition: opacity .15s;
+        }
+        .lib-hero-cover-wrap:hover .lib-hero-cover-edit { opacity: 1; }
+        @media (hover: none) { .lib-hero-cover-edit { opacity: 0.85; } }
         .lib-hero-meta { min-width: 0; }
         .lib-hero-kind { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); }
         .lib-hero-name { font-size: 1.6rem; font-weight: 800; color: #fff; line-height: 1.15; margin: 0.15rem 0 0.2rem; word-break: break-word; }
@@ -1942,6 +1962,56 @@
             background: var(--primary);
             border-color: transparent;
         }
+
+        /* Secondary round buttons flanking the transport (favorite, sleep). */
+        .np-btn.np-side {
+            width: 34px;
+            height: 34px;
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.6);
+        }
+        .np-btn.np-side.on { color: var(--primary); border-color: rgba(255, 0, 80, 0.4); }
+
+        /* Row heart: dim until favorited (or hovered). */
+        .lib-btn.lib-fav { color: rgba(255, 255, 255, 0.35); font-size: 0.95rem; }
+        .lib-btn.lib-fav:hover { color: rgba(255, 255, 255, 0.7); }
+        .lib-btn.lib-fav.on { color: var(--primary); }
+
+        /* Toolbar favorites-only toggle */
+        .lib-fav-toggle { color: rgba(255, 255, 255, 0.5); }
+        .lib-fav-toggle.on { color: var(--primary); border-color: rgba(255, 0, 80, 0.4); }
+
+        /* "Up next" queue inside the now-playing panel */
+        .np-queue {
+            margin-top: 0.8rem;
+            border-top: 1px solid var(--card-border);
+            padding-top: 0.6rem;
+        }
+        .np-queue-head {
+            display: flex; align-items: center; justify-content: space-between;
+            font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.03em; color: var(--text-dim); margin-bottom: 0.35rem;
+        }
+        .np-queue-head button {
+            width: auto; margin: 0; padding: 0.1rem 0.5rem; font-size: 0.68rem;
+            border-radius: 6px; background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border); text-transform: none; letter-spacing: 0;
+        }
+        #npQueueList { max-height: 180px; overflow-y: auto; }
+        .np-queue-row {
+            display: flex; align-items: center; gap: 0.4rem;
+            padding: 0.25rem 0.2rem; border-radius: 6px; font-size: 0.76rem;
+        }
+        .np-queue-row:hover { background: rgba(255, 255, 255, 0.05); }
+        .np-queue-name {
+            flex: 1; min-width: 0; cursor: pointer;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .np-queue-x {
+            width: auto; margin: 0; padding: 0 0.35rem; font-size: 0.85rem;
+            background: transparent; border: none; color: var(--text-dim); cursor: pointer;
+        }
+        .np-queue-x:hover { color: var(--primary); }
 
         /* Mobile-only playlist picker toggle (hidden on desktop) */
         .pl-toggle {

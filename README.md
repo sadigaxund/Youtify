@@ -57,12 +57,15 @@
 - **Seekable live preview** — plays the full track with your effects applied; drag the playhead anywhere and it maps 1:1 to the timeline.
 - **A/B compare** — every combo you preview is saved as a chip. Flip between them instantly (each render is cached per effect-set) to compare, without disturbing your current controls. Load any snapshot back into the controls in one click.
 - **Lossless preview** — previews are rendered to lossless FLAC, so what you audition is *higher* quality than the final MP3, with no extra lossy stage. (The download/export is a single-pass 320 kbps MP3.)
+- **Fast preview** (opt-in) — render previews as small 128 kbps MP3s instead of FLAC for quicker turnaround on slow machines; export quality is unaffected.
 - **⚡ Turbo Render** (opt-in) — caches the preview pipeline in stages so re-rendering similar combos is faster. See [Turbo Render](#turbo-render-faster-previews) below.
 - **Real-time progress** — separate live bars for caching (download) and processing (FFmpeg), instead of a single "done" flip.
 
 ### Metadata
 - Auto-fetches cover art, title, artist, and year from the video.
-- Multi-value tagging via chips (type + Enter) for **Artist, Genre, Composer, and any custom tag** — each value is its own chip with individual autocomplete drawn from your library.
+- Multi-value tagging via chips (type + Enter) for **Artist, Genre, Album, and any custom tag** — each value is its own chip with individual autocomplete drawn from your library. The first album stays the canonical `ALBUM` tag (Jellyfin-compatible); the full list is also written as `ALBUMS`.
+- **Custom-tag key suggestions** (Emotion, Mood, Language, BPM, …) guide what a tag row can hold; new downloads start with an empty **Emotion** row.
+- **Copy metadata from another track** — fill artists/genres/albums/year/custom tags from any saved track via a searchable picker (download form + library editor).
 - Custom tags, cover-art upload, and a configurable delimiter for multi-value fields (e.g. `,`, `|`, `;`).
 - **Output & technical** panel: pick the export format (with a `source → target` preview), toggle Turbo Render, set the tag separator, and optionally type a **custom filename**.
 - Cover art is **standardized server-side** (JPEG, aspect kept, capped ~1000px) for consistent display in players like Jellyfin.
@@ -70,9 +73,12 @@
 ### Library (Server Save mode)
 - Browse everything you've saved, **edit metadata** (re-tags the file in place — no re-download), **reprocess effects** (rebuilds from an archived original), or delete.
 - **Built-in player** — a now-playing panel with cover, seek bar, and prev/next that step through the current filtered list.
-- **OS media integration** — the playing track's title/artist/album + cover art publish to the OS, so it shows in Linux desktop media widgets (MPRIS) and mobile lock-screen/notification controls, with working play/pause/next/previous/seek. (Full controls on Android need an HTTPS origin.)
+- **Play queue** — "Play next" / "Add to queue" per track, with an "Up next" panel in the player; the queue is consumed before falling back to the filtered list.
+- **Sleep timer** — stop playback after 15/30/60 minutes or at the end of the current track.
+- **Play stats & favorites** — play counts and last-played are tracked (sortable; shown in the row tooltip), and tracks can be hearted — with a favorites-only toggle and a `favorite` filter usable in dynamic playlists. Both persist in the sidecars, so they survive database rebuilds.
+- **OS media integration** — the playing track's title/artist/album + cover art publish to the OS, so it shows in Linux desktop media widgets (MPRIS) and mobile lock-screen/notification controls, with working play/pause/next/previous/seek. (Full controls on Android need an HTTPS origin. Firefox-based browsers — incl. Zen — need `media.hardwaremediakeys.enabled=true` in `about:config`, and controls attach after the first user-initiated play.)
 - **Playlists** — manual or **dynamic** (filter-defined) playlists in a sidebar, drag-to-reorder, with cover art. Stored as JSON sidecars under `.youtify/playlists/`.
-- **Browse by Album / Artist / Genre / Year** — a cover-art card grid; pick a card to open a hero view (▶ Play all) of that group's tracks.
+- **Browse by Album / Artist / Genre / Year** — a cover-art card grid (top 4 + "See all"); pick a card to open a hero view (▶ Play all) of that group's tracks. Each facet's thumbnail is **editable** (pencil on the hero cover); artists default to their **YouTube channel avatar** when available, with the first track's cover as fallback.
 - **Filter & sort** — `field=value` filter chips across any metadata (incl. custom tags) plus a sort selector, on top of full-text search.
 - Each save also writes an **archive** under `<save-dir>/.youtify/`: a copy of the source audio plus a JSON sidecar. This lets you re-render without re-downloading and rebuild the index if the database is ever lost.
 - A small **SQLite index** (`metadata.db`) powers the library and tag suggestions; it lives in the cache directory and is rebuilt from the sidecars on startup.
@@ -81,7 +87,6 @@
 ### Sources & export
 - **Two sources** — paste a YouTube URL/search, **or drop a local audio file** into the download view. Uploaded files have their embedded tags + cover auto-read to pre-fill the editor.
 - **Selectable export format** — **Auto** / MP3 320 / FLAC / WAV. *Auto* keeps the source's quality: a lossless source (e.g. an uploaded FLAC) exports as FLAC, a lossy one (YouTube) as MP3 320. Tags + cover are embedded in every format (ID3 for MP3/WAV, Vorbis comments for FLAC).
-- **Batch generate** — open **⊞ Generate** to pick sets of EQ / compression / enhance / loudness values and drop every combination into the A/B "Mixes" list at once; each renders on click.
 
 ### Deployment
 - **Browser Download** (default): process and download straight to your device.

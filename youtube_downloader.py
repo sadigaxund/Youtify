@@ -367,19 +367,26 @@ def render_preview_checkpointed(
     source: str, out_path: str, video_id: str, ckpt_dir: str, *,
     eq_preset=None, mbc_preset=None, enhance_mode=None, enhance_intensity=1.5,
     normalize=True, normalize_i=-16.0, original=False, use_checkpoints=True,
+    quality: str = "hq",
 ) -> str:
     """
-    Render a full-length preview, encoded LOSSLESS (FLAC — `out_path` should end
-    .flac): faster to produce than a 320k MP3 *and* higher quality (no lossy stage).
+    Render a full-length preview. quality='hq' encodes LOSSLESS (FLAC —
+    `out_path` should end .flac): faster to produce than a 320k MP3 *and* higher
+    quality (no lossy stage). quality='fast' trades fidelity for speed: a 128k
+    MP3 (`out_path` should end .mp3) that encodes quicker and is far smaller.
     Export/download is separate (process_audio -> 320k MP3) and is unaffected.
 
     use_checkpoints (Turbo): when True, cache lossless WAV intermediates per
     pipeline prefix so a new combo sharing a prefix resumes mid-pipeline instead of
     recomputing every stage. When False, a plain single-pass render (no WAVs).
+    Checkpoints stay lossless WAV either way, so they're shared across qualities.
     """
     import hashlib
 
-    # Turbo OFF: one ffmpeg pass, source -> full filter chain -> FLAC. No WAVs.
+    encode_tail = (['-ar', '44100', '-c:a', 'libmp3lame', '-b:a', '128k']
+                   if quality == "fast" else ['-ar', '44100', '-c:a', 'flac'])
+
+    # Turbo OFF: one ffmpeg pass, source -> full filter chain -> encode. No WAVs.
     if not use_checkpoints:
         filters = build_filter_chain(
             eq_preset=eq_preset, mbc_preset=mbc_preset,
@@ -390,7 +397,7 @@ def render_preview_checkpointed(
         cmd = ['ffmpeg', '-y', '-i', source]
         if filters:
             cmd.extend(['-af', ",".join(filters)])
-        cmd.extend(['-map', 'a', '-ar', '44100', '-c:a', 'flac', out_path])
+        cmd.extend(['-map', 'a', *encode_tail, out_path])
         _run_ffmpeg(cmd)
         return out_path
 
@@ -401,9 +408,9 @@ def render_preview_checkpointed(
     if not _ok(base):
         _run_ffmpeg(['ffmpeg', '-y', '-i', source, '-map', 'a', *_PREVIEW_WAV_FMT, base])
 
-    # Original = no tonal/dynamic FX -> straight (lossless) encode from the source.
+    # Original = no tonal/dynamic FX -> straight encode from the source.
     if original:
-        _run_ffmpeg(['ffmpeg', '-y', '-i', base, '-map', 'a', '-ar', '44100', '-c:a', 'flac', out_path])
+        _run_ffmpeg(['ffmpeg', '-y', '-i', base, '-map', 'a', *encode_tail, out_path])
         prune_checkpoints(ckpt_dir)
         return out_path
 
@@ -431,11 +438,11 @@ def render_preview_checkpointed(
                          '-map', 'a', *_PREVIEW_WAV_FMT, cp])
         prev_path = cp
 
-    # Tail: loudness (last filter) + the lossless FLAC encode.
+    # Tail: loudness (last filter) + the final encode.
     cmd = ['ffmpeg', '-y', '-i', prev_path]
     if normalize:
         cmd.extend(['-af', f"loudnorm=I={normalize_i}:LRA=11:TP=-1.5"])
-    cmd.extend(['-map', 'a', '-ar', '44100', '-c:a', 'flac', out_path])
+    cmd.extend(['-map', 'a', *encode_tail, out_path])
     _run_ffmpeg(cmd)
     prune_checkpoints(ckpt_dir)
     return out_path
@@ -562,10 +569,50 @@ def get_video_info(url: str) -> dict:
                 "author": info.get("uploader"),
                 "view_count": info.get("view_count"),
                 "video_id": info.get("id"),
-                "upload_date": info.get("upload_date")  # YYYYMMDD format
+                "upload_date": info.get("upload_date"),  # YYYYMMDD format
+                "channel_id": info.get("channel_id"),
             }
     except Exception as e:
         raise RuntimeError(f"Failed to extract video info: {str(e)}")
+
+
+def fetch_channel_avatar(channel_id: str, max_side: int = 600) -> Optional[bytes]:
+    """
+    Fetch a channel's profile picture and return it normalized to JPEG bytes,
+    or None on any failure. One extra yt-dlp network call — run in background.
+    """
+    if not channel_id:
+        return None
+    try:
+        opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': True,
+            'skip_download': True,
+            'playlist_items': '0',
+        }
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(f"https://www.youtube.com/channel/{channel_id}",
+                                    download=False, process=False)
+        thumbs = info.get('thumbnails') or []
+        # Prefer the uncropped avatar; otherwise the largest square-ish thumb.
+        avatar = next((t for t in thumbs if t.get('id') == 'avatar_uncropped'), None)
+        if avatar is None:
+            squares = [t for t in thumbs
+                       if t.get('width') and t.get('height')
+                       and 0.9 <= t['width'] / t['height'] <= 1.1]
+            squares.sort(key=lambda t: t['width'], reverse=True)
+            avatar = squares[0] if squares else None
+        if not avatar or not avatar.get('url'):
+            return None
+        import urllib.request
+        with urllib.request.urlopen(avatar['url'], timeout=15) as resp:
+            raw = resp.read()
+        data, _ = normalize_cover(raw, max_side=max_side)
+        return data
+    except Exception as e:
+        print(f"Warning: channel avatar fetch failed for {channel_id}: {e}")
+        return None
 
 
 def search_youtube(query: str, limit: int = 30) -> list:
@@ -923,7 +970,15 @@ def embed_custom_metadata(
         if user_metadata.get('artist'):
             tags.add(TPE1(encoding=3, text=user_metadata['artist']))
         if user_metadata.get('album'):
-            tags.add(TALB(encoding=3, text=user_metadata['album']))
+            # Album may be multi-value (delimiter-joined). The first is the
+            # canonical TALB (Jellyfin-compatible single album); the full list
+            # additionally lands in a TXXX 'ALBUMS' frame.
+            delim = user_metadata.get('delimiter', '|')
+            album_list = [a.strip() for a in user_metadata['album'].split(delim) if a.strip()]
+            if album_list:
+                tags.add(TALB(encoding=3, text=album_list[0]))
+                if len(album_list) > 1:
+                    tags.add(TXXX(encoding=3, desc='ALBUMS', text=delim.join(album_list)))
         if user_metadata.get('genre'):
             # Use configured delimiter, do not split (User preference)
             # Force Title Case for all genres
@@ -1024,7 +1079,15 @@ def embed_flac_metadata(
 
         setc('TITLE', user_metadata.get('title'))
         setc('ARTIST', user_metadata.get('artist'))
-        setc('ALBUM', user_metadata.get('album'))
+        if user_metadata.get('album'):
+            # First album = canonical ALBUM; full list as multi-value ALBUMS
+            # (Vorbis comments support real multi-value fields natively).
+            delim = user_metadata.get('delimiter', '|')
+            album_list = [a.strip() for a in user_metadata['album'].split(delim) if a.strip()]
+            if album_list:
+                audio['ALBUM'] = album_list[0]
+                if len(album_list) > 1:
+                    audio['ALBUMS'] = album_list
         setc('DATE', user_metadata.get('year'))
         setc('COMPOSER', user_metadata.get('composer'))
         if user_metadata.get('genre'):

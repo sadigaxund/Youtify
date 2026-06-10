@@ -22,11 +22,19 @@
                 const libAudio = new Audio();
                 let libPlayingId = null;
                 let visibleItems = [];                  // current filtered+sorted list (prev/next scope)
+                let playQueue = [];                     // user-curated "up next" track ids (session-only)
+                let playStatsArmed = null;              // track id whose play hasn't been counted yet
+                let sleepMode = 'off';                  // 'off' | minutes (number) | 'eot'
+                let sleepTimer = null;
+                let favOnly = false;                    // toolbar "favorites only" toggle
                 let libFilters = [];                    // [{field, value}]
                 let libSort = { field: 'created_at', dir: -1 };
                 let libPlaylists = [];                  // sidebar playlists
                 let currentSource = { type: 'all' };    // {type:'all'} | {type:'playlist',...} | {type:'browse', field, value}
                 let browseField = 'album';               // active Browse-by facet
+                let browseExpanded = false;              // facet grid: 4 cards vs all
+                let facetCovers = {};                    // {field: Set(values with a custom cover)}
+                let facetCoverVer = Date.now();          // cache-buster for facet covers
                 let createFilters = [];                 // dynamic-playlist builder chips
                 let createKind = 'manual';
                 let createCoverBase64 = null;
@@ -36,6 +44,7 @@
 
                 function playById(id) {
                     libPlayingId = id;
+                    playStatsArmed = id;   // counted once playback crosses the threshold
                     libAudio.src = `/library/${id}/audio`;
                     libAudio.play().catch(() => {});
                     renderNowPlaying();
@@ -48,6 +57,15 @@
                     playById(id);
                 }
                 function stepTrack(delta) {
+                    // Forward steps consume the user queue first (skipping any
+                    // queued tracks that were deleted meanwhile).
+                    if (delta > 0) {
+                        while (playQueue.length) {
+                            const id = playQueue.shift();
+                            if (itemById(id)) { renderQueue(); playById(id); return; }
+                        }
+                        renderQueue();
+                    }
                     if (!visibleItems.length) return;
                     let i = visibleItems.findIndex(x => x.id === libPlayingId);
                     if (i < 0) i = delta > 0 ? -1 : 0;
@@ -98,6 +116,11 @@
                     cov.src = `/library/${it.id}/cover?v=${encodeURIComponent(it.updated_at || '')}`;
                     setMarquee($('npTitle'), it.title || it.filename || it.youtube_id);
                     setMarquee($('npArtist'), (it.artists || []).join(', '));
+                    const nf = $('npFav');
+                    if (nf) {
+                        nf.classList.toggle('on', !!it.favorite);
+                        nf.title = it.favorite ? 'Unfavorite' : 'Favorite';
+                    }
                     updateMediaSession(it);
                     updateLibPlayIcons();
                 }
@@ -106,12 +129,16 @@
                 function updateMediaSession(it) {
                     if (!('mediaSession' in navigator)) return;
                     const cover = `${location.origin}/library/${it.id}/cover?v=${encodeURIComponent(it.updated_at || '')}`;
-                    navigator.mediaSession.metadata = new MediaMetadata({
-                        title: it.title || it.filename || it.youtube_id,
-                        artist: (it.artists || []).join(', '),
-                        album: it.album || '',
-                        artwork: ['96x96', '256x256', '512x512'].map(s => ({ src: cover, sizes: s, type: 'image/jpeg' })),
-                    });
+                    // Firefox can throw on artwork shapes it dislikes instead of
+                    // ignoring them — never let that break playback.
+                    try {
+                        navigator.mediaSession.metadata = new MediaMetadata({
+                            title: it.title || it.filename || it.youtube_id,
+                            artist: (it.artists || []).join(', '),
+                            album: it.album || '',
+                            artwork: ['96x96', '256x256', '512x512'].map(s => ({ src: cover, sizes: s, type: 'image/jpeg' })),
+                        });
+                    } catch (e) { /* ignore */ }
                 }
                 function updatePositionState() {
                     if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) return;
@@ -125,7 +152,8 @@
                         });
                     } catch (e) { /* ignore */ }
                 }
-                if ('mediaSession' in navigator) {
+                function bindMediaHandlers() {
+                    if (!('mediaSession' in navigator)) return;
                     const ms = navigator.mediaSession;
                     const set = (a, fn) => { try { ms.setActionHandler(a, fn); } catch (e) { } };
                     set('play', () => libAudio.play());
@@ -136,15 +164,46 @@
                     set('seekbackward', d => { libAudio.currentTime = Math.max(0, libAudio.currentTime - ((d && d.seekOffset) || 10)); });
                     set('seekforward', d => { libAudio.currentTime = Math.min(libAudio.duration || 1e9, libAudio.currentTime + ((d && d.seekOffset) || 10)); });
                 }
+                bindMediaHandlers();
 
-                libAudio.addEventListener('play', () => { updateLibPlayIcons(); if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing'; });
+                libAudio.addEventListener('play', () => {
+                    updateLibPlayIcons();
+                    if ('mediaSession' in navigator) {
+                        navigator.mediaSession.playbackState = 'playing';
+                        // Firefox/Zen only reliably pick up metadata + handlers when
+                        // (re)applied after a user-gesture-initiated play.
+                        const it = itemById(libPlayingId);
+                        if (it) updateMediaSession(it);
+                        bindMediaHandlers();
+                    }
+                });
                 libAudio.addEventListener('pause', () => { updateLibPlayIcons(); if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused'; });
-                libAudio.addEventListener('ended', () => stepTrack(1));
+                libAudio.addEventListener('ended', () => {
+                    if (sleepMode === 'eot') {
+                        // Sleep at end of track: stop here (the queue is kept).
+                        setSleepMode('off');
+                        return;
+                    }
+                    stepTrack(1);
+                });
                 libAudio.addEventListener('timeupdate', () => {
                     if (!libAudio.duration) return;
                     $('npSeek').value = String(Math.round(libAudio.currentTime / libAudio.duration * 1000));
                     $('npCur').textContent = fmtDur(libAudio.currentTime);
                     updatePositionState();
+                    // Count a play once past 30s (or half of a short track) — not on
+                    // the first instant, so accidental clicks don't inflate stats.
+                    if (playStatsArmed != null && playStatsArmed === libPlayingId &&
+                        libAudio.currentTime > Math.min(30, libAudio.duration * 0.5)) {
+                        const id = playStatsArmed;
+                        playStatsArmed = null;
+                        fetch(`/library/${id}/played`, { method: 'POST' })
+                            .then(r => r.ok ? r.json() : null)
+                            .then(stats => {
+                                const it = itemById(id);
+                                if (it && stats) { it.play_count = stats.play_count; it.last_played = stats.last_played; }
+                            }).catch(() => {});
+                    }
                 });
                 libAudio.addEventListener('loadedmetadata', () => { $('npDur').textContent = fmtDur(libAudio.duration); updatePositionState(); });
 
@@ -182,16 +241,19 @@
                         case 'title': return it.title || '';
                         case 'artist': return (it.artists || []).join(' ');
                         case 'genre': return (it.genres || []).join(' ');
-                        case 'album': return it.album || '';
+                        case 'album': return (it.albums && it.albums.length ? it.albums : [it.album || '']).join(' ');
                         case 'year': return it.year != null ? String(it.year) : '';
                         case 'duration': return it.duration != null ? String(it.duration) : '';
                         case 'created_at': return it.created_at || '';
+                        case 'play_count': return it.play_count != null ? String(it.play_count) : '0';
+                        case 'last_played': return it.last_played || '';
+                        case 'favorite': return it.favorite ? 'true' : '';
                         case 'composer': return (it.custom_fields && (it.custom_fields.Composer || it.custom_fields.composer)) || '';
                         default: return (it.custom_fields && it.custom_fields[field]) || '';
                     }
                 }
                 function libFieldOptions() {
-                    const fields = ['title', 'artist', 'genre', 'album', 'year', 'composer'];
+                    const fields = ['title', 'artist', 'genre', 'album', 'year', 'composer', 'favorite'];
                     const seen = new Set(fields.map(f => f.toLowerCase()));
                     libItems.forEach(it => Object.keys(it.custom_fields || {}).forEach(k => {
                         if (!seen.has(k.toLowerCase())) { seen.add(k.toLowerCase()); fields.push(k); }
@@ -215,7 +277,7 @@
                         return libItems.filter(it => {
                             if (field === 'artist') return (it.artists || []).includes(value);
                             if (field === 'genre') return (it.genres || []).includes(value);
-                            if (field === 'album') return (it.album || '') === value;
+                            if (field === 'album') return (it.albums && it.albums.length ? it.albums : (it.album ? [it.album] : [])).includes(value);
                             if (field === 'year') return String(it.year) === value;
                             return false;
                         });
@@ -225,13 +287,40 @@
 
                 // --- Browse-by facets (cover-art card grid) ---
                 const BROWSE_FIELDS = [['album', 'Albums'], ['artist', 'Artists'], ['genre', 'Genres'], ['year', 'Years']];
+
+                async function loadFacets() {
+                    try {
+                        const res = await fetch('/facets');
+                        if (!res.ok) return;
+                        const data = await res.json();
+                        facetCovers = {};
+                        Object.keys(data).forEach(f => { facetCovers[f] = new Set(data[f] || []); });
+                    } catch (e) { /* ignore — track-cover fallback still works */ }
+                }
+                function hasFacetCover(field, value) {
+                    return !!(facetCovers[field] && facetCovers[field].has(value));
+                }
+                function facetCoverUrl(field, value) {
+                    return `/facets/${encodeURIComponent(field)}/${encodeURIComponent(value)}/cover?v=${facetCoverVer}`;
+                }
+                // Set an <img> to the custom facet cover when present, else the
+                // facet's first-track cover, else the placeholder.
+                function setFacetImg(img, field, value, coverId, updated) {
+                    const trackUrl = `/library/${coverId}/cover?v=${encodeURIComponent(updated || '')}`;
+                    img.onerror = () => {
+                        img.onerror = () => { img.onerror = null; img.src = PLACEHOLDER; };
+                        img.src = trackUrl;
+                    };
+                    if (hasFacetCover(field, value)) img.src = facetCoverUrl(field, value);
+                    else { img.onerror = () => { img.onerror = null; img.src = PLACEHOLDER; }; img.src = trackUrl; }
+                }
                 function browseValuesFor(field) {
                     const map = new Map();   // value -> {value, count, coverId, updated}
                     libItems.forEach(it => {
                         let vals;
                         if (field === 'artist') vals = it.artists || [];
                         else if (field === 'genre') vals = it.genres || [];
-                        else if (field === 'album') vals = it.album ? [it.album] : [];
+                        else if (field === 'album') vals = (it.albums && it.albums.length) ? it.albums : (it.album ? [it.album] : []);
                         else if (field === 'year') vals = (it.year != null && it.year !== '') ? [String(it.year)] : [];
                         else vals = [];
                         vals.forEach(v => {
@@ -242,24 +331,26 @@
                     });
                     return [...map.values()].sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
                 }
+                const BROWSE_CAP = 4;   // collapsed facet grid size ("See all" expands)
                 function renderBrowse() {
                     const tabs = $('browseTabs'); tabs.innerHTML = '';
                     BROWSE_FIELDS.forEach(([f, label]) => {
                         const b = document.createElement('button');
                         b.type = 'button'; b.className = 'browse-tab' + (f === browseField ? ' active' : '');
                         b.textContent = label;
-                        b.addEventListener('click', () => { browseField = f; renderBrowse(); });
+                        b.addEventListener('click', () => { browseField = f; browseExpanded = false; renderBrowse(); });
                         tabs.appendChild(b);
                     });
                     const grid = $('browseGrid'); grid.innerHTML = '';
                     const circular = browseField === 'artist';
-                    browseValuesFor(browseField).forEach(v => {
+                    const all = browseValuesFor(browseField);
+                    const shown = browseExpanded ? all : all.slice(0, BROWSE_CAP);
+                    shown.forEach(v => {
                         const card = document.createElement('div');
                         card.className = 'browse-card' + (circular ? ' circ' : '');
                         const img = document.createElement('img');
                         img.className = 'browse-card-cover'; img.loading = 'lazy'; img.alt = '';
-                        img.onerror = () => { img.onerror = null; img.src = PLACEHOLDER; };
-                        img.src = `/library/${v.coverId}/cover?v=${encodeURIComponent(v.updated || '')}`;
+                        setFacetImg(img, browseField, v.value, v.coverId, v.updated);
                         const name = document.createElement('div');
                         name.className = 'browse-card-name'; name.textContent = v.value; name.title = v.value;
                         const cnt = document.createElement('div');
@@ -271,10 +362,18 @@
                         });
                         grid.appendChild(card);
                     });
+                    if (all.length > BROWSE_CAP) {
+                        const more = document.createElement('div');
+                        more.className = 'browse-card browse-more';
+                        more.textContent = browseExpanded ? 'Show less' : `See all ${all.length} ▸`;
+                        more.addEventListener('click', () => { browseExpanded = !browseExpanded; renderBrowse(); });
+                        grid.appendChild(more);
+                    }
                 }
                 function applyFilters(items) {
                     const q = ($('libSearch').value || '').toLowerCase();
                     return items.filter(it => {
+                        if (favOnly && !it.favorite) return false;
                         const hay = [it.title, (it.artists || []).join(' '), (it.genres || []).join(' '), it.album]
                             .join(' ').toLowerCase();
                         if (q && !hay.includes(q)) return false;
@@ -283,7 +382,7 @@
                 }
                 function applySort(items) {
                     const { field, dir } = libSort;
-                    const numeric = (field === 'year' || field === 'duration');
+                    const numeric = (field === 'year' || field === 'duration' || field === 'play_count');
                     return items.slice().sort((a, b) => {
                         let va = fieldText(a, field), vb = fieldText(b, field);
                         if (numeric) return ((parseFloat(va) || 0) - (parseFloat(vb) || 0)) * dir;
@@ -332,8 +431,7 @@
                             $('libHeroCount').textContent = visibleItems.length + ' track' + (visibleItems.length === 1 ? '' : 's');
                             const hc = $('libHeroCover');
                             hc.classList.toggle('circ', currentSource.field === 'artist');
-                            hc.onerror = () => { hc.onerror = null; hc.src = PLACEHOLDER; };
-                            hc.src = `/library/${currentSource.coverId}/cover?v=${encodeURIComponent(currentSource.updated || '')}`;
+                            setFacetImg(hc, currentSource.field, currentSource.value, currentSource.coverId, currentSource.updated);
                         }
                     }
 
@@ -345,6 +443,8 @@
                             .filter(Boolean).join('  ·  ');
                         const row = document.createElement('div');
                         row.className = 'lib-row'; row.dataset.id = it.id;
+                        // Stats live in the tooltip — the row itself stays clean.
+                        row.title = statsTooltip(it);
 
                         const img = document.createElement('img');
                         img.className = 'lib-cover'; img.loading = 'lazy'; img.alt = '';
@@ -361,6 +461,12 @@
 
                         const actions = document.createElement('div');
                         actions.className = 'lib-actions';
+                        const fav = document.createElement('button');
+                        fav.type = 'button'; fav.className = 'lib-btn lib-fav' + (it.favorite ? ' on' : '');
+                        fav.title = it.favorite ? 'Unfavorite' : 'Favorite';
+                        fav.textContent = '♥';
+                        fav.addEventListener('click', e => { e.stopPropagation(); toggleFavorite(it); });
+                        actions.append(fav);
                         const kebab = document.createElement('button');
                         kebab.type = 'button'; kebab.className = 'lib-btn lib-kebab'; kebab.title = 'More';
                         kebab.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>';
@@ -522,6 +628,9 @@
                     const inManual = currentSource.type === 'playlist' && currentSource.kind !== 'dynamic';
                     const title = it.title || it.filename || it.youtube_id;
                     openMenu(anchor, [
+                        { label: 'Play next', fn: () => { playQueue.unshift(it.id); renderQueue(); } },
+                        { label: 'Add to queue', fn: () => { playQueue.push(it.id); renderQueue(); } },
+                        { label: it.favorite ? 'Unfavorite' : 'Favorite', fn: () => toggleFavorite(it) },
                         { label: 'Add to playlist…', fn: () => openPlaylistMenu(anchor, it.youtube_id) },
                         { label: 'Edit', fn: () => openEdit(it.id) },
                         { label: 'Download', fn: () => downloadItem(it) },
@@ -529,6 +638,78 @@
                             ? { label: 'Remove from playlist', danger: true, fn: () => removeFromPlaylist(currentSource.id, it.youtube_id) }
                             : { label: 'Delete', danger: true, fn: () => deleteItem(it.id, title) },
                     ]);
+                }
+
+                // ---- Stats / favorites ----
+                function statsTooltip(it) {
+                    const bits = [];
+                    if (it.created_at) bits.push('Added ' + String(it.created_at).slice(0, 10));
+                    bits.push((it.play_count || 0) + ' play' + ((it.play_count || 0) === 1 ? '' : 's'));
+                    if (it.last_played) bits.push('Last played ' + String(it.last_played).slice(0, 10));
+                    return bits.join('  ·  ');
+                }
+                async function toggleFavorite(it) {
+                    const fav = !it.favorite;
+                    it.favorite = fav;               // optimistic
+                    renderLibrary();
+                    try {
+                        const res = await fetch(`/library/${it.id}/favorite`, {
+                            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ favorite: fav }),
+                        });
+                        if (!res.ok) throw new Error();
+                    } catch (e) {
+                        it.favorite = !fav;          // roll back
+                        renderLibrary();
+                        showError('Could not update favorite');
+                    }
+                }
+
+                // ---- Play queue ("Up next") panel ----
+                function renderQueue() {
+                    const box = $('npQueue'), list = $('npQueueList');
+                    if (!box || !list) return;
+                    playQueue = playQueue.filter(id => itemById(id));   // drop deleted tracks
+                    if (!playQueue.length) { box.style.display = 'none'; list.innerHTML = ''; return; }
+                    box.style.display = 'block';
+                    list.innerHTML = '';
+                    playQueue.forEach((id, i) => {
+                        const it = itemById(id);
+                        const row = document.createElement('div');
+                        row.className = 'np-queue-row';
+                        const nm = document.createElement('span');
+                        nm.className = 'np-queue-name';
+                        nm.textContent = (i + 1) + '. ' + (it.title || it.filename || it.youtube_id);
+                        nm.title = 'Play now';
+                        nm.addEventListener('click', () => {
+                            playQueue.splice(i, 1); renderQueue(); playById(id);
+                        });
+                        const x = document.createElement('button');
+                        x.type = 'button'; x.className = 'np-queue-x'; x.textContent = '×'; x.title = 'Remove from queue';
+                        x.addEventListener('click', e => { e.stopPropagation(); playQueue.splice(i, 1); renderQueue(); });
+                        row.append(nm, x);
+                        list.appendChild(row);
+                    });
+                }
+
+                // ---- Sleep timer ----
+                function setSleepMode(mode) {
+                    sleepMode = mode;
+                    if (sleepTimer) { clearTimeout(sleepTimer); sleepTimer = null; }
+                    if (typeof mode === 'number') {
+                        sleepTimer = setTimeout(() => {
+                            libAudio.pause();
+                            setSleepMode('off');
+                        }, mode * 60 * 1000);
+                    }
+                    updateSleepUi();
+                }
+                function updateSleepUi() {
+                    const b = $('npSleep');
+                    if (!b) return;
+                    b.classList.toggle('on', sleepMode !== 'off');
+                    b.title = sleepMode === 'off' ? 'Sleep timer'
+                        : (sleepMode === 'eot' ? 'Sleep: end of track' : `Sleep in ${sleepMode} min`);
                 }
 
                 // Download the saved file (same-origin -> the `download` attr forces
@@ -700,18 +881,12 @@
                         editing = { id };
                         $('libEditTitle').textContent = d.title || d.filename || 'Edit';
                         $('libTitle').value = d.title || '';
-                        $('libArtists').value = (d.artists || []).join(', ');
-                        $('libGenres').value = (d.genres || []).join(', ');
-                        $('libAlbum').value = d.album || '';
+                        // Same chip inputs as the download form (rebuilt per edit session).
+                        mountEditChips(d);
                         $('libYear').value = d.year || '';
                         const cf = d.custom_fields || {};
-                        $('libComposer').value = cf.Composer || cf.composer || '';
-                        // Arbitrary custom tags (everything except the composer we surface above).
                         const cont = $('libCustomTags'); cont.innerHTML = '';
-                        Object.keys(cf).forEach(k => {
-                            if (k.toLowerCase() === 'composer') return;
-                            addCustomTag(cont, k, cf[k]);
-                        });
+                        Object.keys(cf).forEach(k => addCustomTag(cont, k, cf[k]));
                         // Cover
                         libEditCoverBase64 = null;
                         libEditResetUrl = `/library/${id}/cover?v=${encodeURIComponent(d.updated_at || '')}`;
@@ -723,6 +898,19 @@
                         showMetaPane();
                         showView('libEdit');
                     } catch (e) { showError(e.message); }
+                }
+
+                // (Re)build the editor's chip inputs from a track detail.
+                function mountEditChips(d) {
+                    const albums = (d.albums && d.albums.length) ? d.albums : (d.album ? [d.album] : []);
+                    const artistsChip = makeChipValue(d.artists || [], 'artist');
+                    const genresChip = makeChipValue(d.genres || [], 'genre');
+                    const albumsChip = makeChipValue(albums, 'album');
+                    [['libArtistsChips', artistsChip], ['libGenresChips', genresChip], ['libAlbumChips', albumsChip]]
+                        .forEach(([id, chip]) => { const m = $(id); m.innerHTML = ''; m.appendChild(chip.wrap); });
+                    editing.artistsChip = artistsChip;
+                    editing.genresChip = genresChip;
+                    editing.albumsChip = albumsChip;
                 }
 
                 function showMetaPane() {
@@ -738,21 +926,19 @@
                     $('libTabMeta').style.background = 'rgba(255,255,255,0.05)';
                 }
 
-                function splitCsv(v) { return (v || '').split(',').map(s => s.trim()).filter(Boolean); }
-
                 async function saveMeta() {
                     if (!editing) return;
-                    const composer = $('libComposer').value.trim();
-                    const custom = getCustomTags($('libCustomTags')).filter(t => t.key.toLowerCase() !== 'composer');
-                    const custom_tags = (composer ? [{ key: 'Composer', value: composer }] : []).concat(custom);
+                    const custom_tags = getCustomTags($('libCustomTags'));
+                    const albums = editing.albumsChip ? editing.albumsChip.getValues() : [];
                     const body = {
                         title: $('libTitle').value.trim(),
-                        artists: splitCsv($('libArtists').value),
-                        genres: splitCsv($('libGenres').value),
-                        album: $('libAlbum').value.trim(),
+                        artists: editing.artistsChip ? editing.artistsChip.getValues() : [],
+                        genres: editing.genresChip ? editing.genresChip.getValues() : [],
+                        albums,
+                        album: albums[0] || '',
                         year: $('libYear').value.trim(),
                         custom_tags,
-                        delimiter: '|',
+                        delimiter: (els.delimiterInput && els.delimiterInput.value) || '|',
                     };
                     if (libEditCoverBase64) body.thumbnail_base64 = libEditCoverBase64;
                     const btn = $('libSaveMeta');
@@ -812,6 +998,62 @@
                 $('libHeroPlay').addEventListener('click', () => { if (visibleItems.length) libTogglePlay(visibleItems[0].id); });
                 $('libHeroBack').addEventListener('click', () => { currentSource = { type: 'all' }; renderLibrary(); });
 
+                // Hero cover editing: upload a custom facet image / revert to the
+                // first-track cover. (Reuses the playlist-cover resize approach.)
+                function readImageAsJpegBase64(file, maxSide, cb) {
+                    const rd = new FileReader();
+                    rd.onload = ev => {
+                        const im = new Image();
+                        im.onload = () => {
+                            let { width: w, height: h } = im;
+                            const sc = Math.min(1, maxSide / Math.max(w, h));
+                            w = Math.round(w * sc); h = Math.round(h * sc);
+                            const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+                            const cx = cv.getContext('2d'); cx.fillStyle = '#000'; cx.fillRect(0, 0, w, h); cx.drawImage(im, 0, 0, w, h);
+                            cb(cv.toDataURL('image/jpeg', 0.85).split(',')[1]);
+                        };
+                        im.onerror = () => showError('Could not read that image');
+                        im.src = ev.target.result;
+                    };
+                    rd.readAsDataURL(file);
+                }
+                $('libHeroCoverEdit').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (currentSource.type !== 'browse') return;
+                    const { field, value } = currentSource;
+                    const items = [{ label: 'Upload image…', fn: () => $('libHeroCoverUpload').click() }];
+                    if (hasFacetCover(field, value)) {
+                        items.push({
+                            label: 'Remove custom image', danger: true, fn: async () => {
+                                try {
+                                    await fetch(facetCoverUrl(field, value).split('?')[0], { method: 'DELETE' });
+                                    (facetCovers[field] || new Set()).delete(value);
+                                    renderLibrary();
+                                } catch (err) { showError('Remove failed'); }
+                            },
+                        });
+                    }
+                    openMenu(e.currentTarget, items);
+                });
+                $('libHeroCoverUpload').addEventListener('change', (e) => {
+                    const f = e.target.files[0]; e.target.value = '';
+                    if (!f || currentSource.type !== 'browse') return;
+                    const { field, value } = currentSource;
+                    readImageAsJpegBase64(f, 600, async (b64) => {
+                        try {
+                            const res = await fetch(facetCoverUrl(field, value).split('?')[0], {
+                                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ cover_base64: b64 }),
+                            });
+                            if (!res.ok) { showError('Upload failed: ' + (await res.text())); return; }
+                            if (!facetCovers[field]) facetCovers[field] = new Set();
+                            facetCovers[field].add(value);
+                            facetCoverVer = Date.now();
+                            renderLibrary();
+                        } catch (err) { showError(err.message); }
+                    });
+                });
+
                 // Wiring (view navigation)
                 $('navDownload').addEventListener('click', () => showView('download'));
                 $('navLibrary').addEventListener('click', () => { showView('library'); currentSource = { type: 'all' }; loadLibrary(); loadPlaylists(); });
@@ -821,7 +1063,7 @@
                 // Mobile: toggle the playlist picker; tap the mini-player to expand.
                 $('plToggle').addEventListener('click', () => $('libSidebar').classList.toggle('open'));
                 $('npBody').addEventListener('click', (e) => {
-                    if (e.target.closest('.np-controls') || e.target.closest('.np-seek')) return;
+                    if (e.target.closest('.np-controls') || e.target.closest('.np-seek') || e.target.closest('.np-queue')) return;
                     if (window.matchMedia('(max-width: 900px)').matches) {
                         $('nowPlaying').classList.add('np-expanded');   // mini-bar -> full sheet
                     }
@@ -896,21 +1138,65 @@
                 $('npSeek').addEventListener('input', () => {
                     if (libAudio.duration) libAudio.currentTime = ($('npSeek').value / 1000) * libAudio.duration;
                 });
+                $('npFav').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const it = itemById(libPlayingId);
+                    if (it) toggleFavorite(it);
+                });
+                $('npSleep').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const opt = (label, mode) => ({
+                        label: (sleepMode === mode ? '✓ ' : '') + label,
+                        fn: () => setSleepMode(mode),
+                    });
+                    openMenu(e.currentTarget, [
+                        opt('Off', 'off'),
+                        opt('15 minutes', 15),
+                        opt('30 minutes', 30),
+                        opt('60 minutes', 60),
+                        opt('End of track', 'eot'),
+                    ]);
+                });
+                $('npQueueClear').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    playQueue = [];
+                    renderQueue();
+                });
+                $('libFavToggle').addEventListener('click', () => {
+                    favOnly = !favOnly;
+                    $('libFavToggle').classList.toggle('on', favOnly);
+                    renderLibrary();
+                });
 
                 $('libTabMeta').addEventListener('click', showMetaPane);
                 $('libTabFx').addEventListener('click', showFxPane);
                 $('libAddTagBtn').addEventListener('click', () => addCustomTag($('libCustomTags')));
+                $('libCopyMetaBtn').addEventListener('click', () => {
+                    if (!editing) return;
+                    openCopyMetaPicker((d) => {
+                        // Rebuild the chip inputs with the copied values.
+                        mountEditChips(d);
+                        $('libYear').value = d.year || '';
+                        const cont = $('libCustomTags'); cont.innerHTML = '';
+                        Object.entries(d.custom_fields || {}).forEach(([k, v]) => addCustomTag(cont, k, v));
+                    }, editing.id);
+                });
                 $('libSaveMeta').addEventListener('click', saveMeta);
                 $('libReprocess').addEventListener('click', reprocess);
 
                 // Reveal the Library nav only in server-save mode.
                 fetch('/config').then(r => r.json()).then(cfg => {
                     if (cfg && cfg.browser_download_mode === false) {
+                        window.serverSaveMode = true;
                         $('navLibrary').style.display = '';
+                        // Copy-from needs a library to copy from.
+                        const cm = document.getElementById('copyMetaBtn');
+                        if (cm) cm.style.display = '';
                         // Library is the default landing in server-save mode.
                         showView('library');
                         loadLibrary();
                         loadPlaylists();
+                        loadFacets();
                     }
                     // Apply the server Turbo default only if the user hasn't chosen.
                     const tt = document.getElementById('turboToggle');
