@@ -21,7 +21,7 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Optional, Dict, Any, List
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def _norm_list(values, titlecase=False) -> List[str]:
@@ -124,6 +124,14 @@ class AudioMetadataDB:
                 conn.execute("ALTER TABLE playlists ADD COLUMN position INTEGER DEFAULT 0")
             except Exception:
                 pass
+            # v3: play stats + favorite (no-ops if already present).
+            for ddl in ("ALTER TABLE audio_files ADD COLUMN play_count INTEGER DEFAULT 0",
+                        "ALTER TABLE audio_files ADD COLUMN last_played TIMESTAMP",
+                        "ALTER TABLE audio_files ADD COLUMN favorite INTEGER DEFAULT 0"):
+                try:
+                    conn.execute(ddl)
+                except Exception:
+                    pass
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS playlist_tracks (
                     playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
@@ -141,13 +149,21 @@ class AudioMetadataDB:
                      rel_path: Optional[str] = None, filename: Optional[str] = None,
                      sidecar_path: Optional[str] = None, effects: Optional[dict] = None,
                      artists: Optional[List[str]] = None, genres: Optional[List[str]] = None,
-                     custom_fields: Optional[Dict[str, Any]] = None) -> int:
+                     albums: Optional[List[str]] = None,
+                     custom_fields: Optional[Dict[str, Any]] = None,
+                     play_count: Optional[int] = None, last_played: Optional[str] = None,
+                     favorite: Optional[bool] = None, created_at: Optional[str] = None) -> int:
         """
         Insert or update a track by youtube_id (id is preserved on update).
         Tags and custom fields are fully replaced to mirror the current state.
+        play_count/last_played/favorite/created_at are sidecar-backed (so they
+        survive rebuilds); when None, existing DB values are preserved.
         """
         artists = _norm_list(artists)
         genres = _norm_list(genres, titlecase=True)
+        # Albums: multi-value via the tags table; the `album` column keeps the
+        # canonical (first) value for players/facets that expect a single one.
+        albums = _norm_list(albums if albums is not None else ([album] if album else []))
         custom_fields = custom_fields or {}
         effects_json = json.dumps(effects) if effects is not None else None
 
@@ -160,19 +176,29 @@ class AudioMetadataDB:
         except (ValueError, TypeError):
             dur_val = None
 
+        fav_val = None if favorite is None else (1 if favorite else 0)
+
         with self.get_connection() as conn:
             conn.execute('''
                 INSERT INTO audio_files
                     (youtube_id, title, album, year, duration, rel_path, filename,
-                     sidecar_path, effects_json, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?, CURRENT_TIMESTAMP)
+                     sidecar_path, effects_json, play_count, last_played, favorite,
+                     created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?, COALESCE(?, 0), ?, COALESCE(?, 0),
+                        COALESCE(?, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)
                 ON CONFLICT(youtube_id) DO UPDATE SET
                     title=excluded.title, album=excluded.album, year=excluded.year,
                     duration=excluded.duration, rel_path=excluded.rel_path,
                     filename=excluded.filename, sidecar_path=excluded.sidecar_path,
-                    effects_json=excluded.effects_json, updated_at=CURRENT_TIMESTAMP
+                    effects_json=excluded.effects_json,
+                    play_count=COALESCE(?, audio_files.play_count),
+                    last_played=COALESCE(?, audio_files.last_played),
+                    favorite=COALESCE(?, audio_files.favorite),
+                    created_at=COALESCE(?, audio_files.created_at),
+                    updated_at=CURRENT_TIMESTAMP
             ''', (youtube_id, title, album, year_val, dur_val, rel_path, filename,
-                  sidecar_path, effects_json))
+                  sidecar_path, effects_json, play_count, last_played, fav_val, created_at,
+                  play_count, last_played, fav_val, created_at))
 
             # lastrowid is unreliable on the DO UPDATE branch — re-select.
             row = conn.execute("SELECT id FROM audio_files WHERE youtube_id=?",
@@ -183,7 +209,7 @@ class AudioMetadataDB:
             conn.execute("DELETE FROM audio_tags WHERE audio_file_id=?", (audio_id,))
             conn.execute("DELETE FROM metadata_fields WHERE audio_file_id=?", (audio_id,))
 
-            for kind, values in (("artist", artists), ("genre", genres)):
+            for kind, values in (("artist", artists), ("genre", genres), ("album", albums)):
                 for value in values:
                     conn.execute(
                         "INSERT INTO tags(kind, value) VALUES(?,?) "
@@ -203,6 +229,31 @@ class AudioMetadataDB:
 
             return audio_id
 
+    def bump_play(self, audio_file_id: int) -> Optional[dict]:
+        """Increment play count + stamp last_played. Returns the new stats."""
+        with self.get_connection() as conn:
+            cur = conn.execute('''
+                UPDATE audio_files
+                SET play_count = COALESCE(play_count, 0) + 1, last_played = CURRENT_TIMESTAMP
+                WHERE id=?''', (audio_file_id,))
+            if cur.rowcount == 0:
+                return None
+            row = conn.execute(
+                "SELECT youtube_id, play_count, last_played FROM audio_files WHERE id=?",
+                (audio_file_id,)).fetchone()
+            return dict(row) if row else None
+
+    def set_favorite(self, audio_file_id: int, fav: bool) -> Optional[str]:
+        """Toggle favorite. Returns the track's youtube_id or None if absent."""
+        with self.get_connection() as conn:
+            row = conn.execute("SELECT youtube_id FROM audio_files WHERE id=?",
+                               (audio_file_id,)).fetchone()
+            if not row:
+                return None
+            conn.execute("UPDATE audio_files SET favorite=? WHERE id=?",
+                         (1 if fav else 0, audio_file_id))
+            return row["youtube_id"]
+
     def delete_audio(self, audio_file_id: int) -> Optional[dict]:
         """Delete a track. Returns the row (for file cleanup) or None if absent."""
         with self.get_connection() as conn:
@@ -214,6 +265,13 @@ class AudioMetadataDB:
             return dict(row)
 
     # ------------------------------------------------------------------- reads
+
+    @staticmethod
+    def _canonical_first(values: List[str], canonical) -> List[str]:
+        """Move the canonical value to the front (tag reads are alphabetical)."""
+        if canonical and canonical in values:
+            return [canonical] + [v for v in values if v != canonical]
+        return values
 
     def _tags_by_audio(self, conn, kind: str) -> Dict[int, List[str]]:
         rows = conn.execute('''
@@ -232,6 +290,7 @@ class AudioMetadataDB:
                 "SELECT * FROM audio_files ORDER BY created_at DESC").fetchall()
             artists = self._tags_by_audio(conn, "artist")
             genres = self._tags_by_audio(conn, "genre")
+            albums = self._tags_by_audio(conn, "album")
             # Custom fields per track (for client-side filtering/sorting).
             custom: Dict[int, Dict[str, str]] = {}
             for r in conn.execute(
@@ -242,6 +301,8 @@ class AudioMetadataDB:
                 d = dict(f)
                 d["artists"] = artists.get(f["id"], [])
                 d["genres"] = genres.get(f["id"], [])
+                d["albums"] = self._canonical_first(
+                    albums.get(f["id"], []) or ([f["album"]] if f["album"] else []), f["album"])
                 d["custom_fields"] = custom.get(f["id"], {})
                 d.pop("effects_json", None)
                 items.append(d)
@@ -262,6 +323,12 @@ class AudioMetadataDB:
                 SELECT t.value FROM audio_tags at JOIN tags t ON t.id=at.tag_id
                 WHERE at.audio_file_id=? AND t.kind='genre' ORDER BY t.value''',
                 (audio_file_id,)).fetchall()]
+            d["albums"] = self._canonical_first(
+                [r["value"] for r in conn.execute('''
+                    SELECT t.value FROM audio_tags at JOIN tags t ON t.id=at.tag_id
+                    WHERE at.audio_file_id=? AND t.kind='album' ORDER BY t.value''',
+                    (audio_file_id,)).fetchall()] or ([d["album"]] if d.get("album") else []),
+                d.get("album"))
             d["custom_fields"] = {r["field_name"]: r["field_value"] for r in conn.execute(
                 "SELECT field_name, field_value FROM metadata_fields WHERE audio_file_id=?",
                 (audio_file_id,)).fetchall()}
@@ -387,6 +454,7 @@ class AudioMetadataDB:
                 if rel and not os.path.exists(os.path.join(save_dir, rel)):
                     continue  # stale sidecar, file removed
                 meta = sc.get("metadata", {})
+                stats = sc.get("stats") or {}
                 self.upsert_audio(
                     youtube_id=sc["youtube_id"],
                     title=meta.get("title"),
@@ -399,8 +467,16 @@ class AudioMetadataDB:
                     effects=sc.get("effects"),
                     artists=meta.get("artists", []),
                     genres=meta.get("genres", []),
+                    albums=meta.get("albums") or ([meta["album"]] if meta.get("album") else []),
                     custom_fields={t["key"]: t["value"]
                                    for t in meta.get("custom_tags", []) if t.get("key")},
+                    play_count=stats.get("play_count", 0),
+                    last_played=stats.get("last_played"),
+                    favorite=sc.get("favorite", False),
+                    # Real date-added comes from the sidecar; without this every
+                    # rebuild would reset created_at to "now". Normalized to
+                    # SQLite's CURRENT_TIMESTAMP format so string sorting works.
+                    created_at=(sc.get("created_at") or "").replace("T", " ")[:19] or None,
                 )
                 count += 1
             except Exception as e:

@@ -280,15 +280,21 @@ function updatePreviewMediaSession() {
     const art = [];
     const src = els.metaThumb && els.metaThumb.src;
     // Only attach real cover art (skip empty / the page URL placeholder).
-    if (src && src !== window.location.href && !src.endsWith('/')) {
-        ['96x96', '256x256', '512x512'].forEach(s => art.push({ src, sizes: s }));
+    // Firefox silently drops very large data: URLs, so skip those too.
+    if (src && src !== window.location.href && !src.endsWith('/') &&
+        !(src.startsWith('data:') && src.length > 256 * 1024)) {
+        const type = src.startsWith('data:') ? (src.slice(5).split(/[;,]/)[0] || 'image/jpeg') : 'image/jpeg';
+        ['96x96', '256x256', '512x512'].forEach(s => art.push({ src, sizes: s, type }));
     }
-    navigator.mediaSession.metadata = new MediaMetadata({
-        title: (els.metaTitle && els.metaTitle.value) || 'Youtify preview',
-        artist: selectedArtists.join(', '),
-        album: (els.metaAlbum && els.metaAlbum.value) || '',
-        artwork: art,
-    });
+    // Firefox can throw on artwork shapes it dislikes — never break playback.
+    try {
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: (els.metaTitle && els.metaTitle.value) || 'Youtify preview',
+            artist: selectedArtists.join(', '),
+            album: (els.metaAlbum && els.metaAlbum.value) || '',
+            artwork: art,
+        });
+    } catch (e) { /* ignore */ }
 }
 function updatePreviewPositionState() {
     if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) return;
@@ -355,7 +361,8 @@ function previewUrlFrom(p) {
         normalize: p.normalize,
         normalize_i: p.normalize_i,
         original: p.original,
-        turbo: !!(els.turboToggle && els.turboToggle.checked)
+        turbo: !!(els.turboToggle && els.turboToggle.checked),
+        quality: (els.fastPreviewToggle && els.fastPreviewToggle.checked) ? 'fast' : 'hq'
     });
     setSourceParam(params);
     return `/stream?${params.toString()}`;

@@ -203,7 +203,53 @@
                 }
             });
 
-            els.uploadNextBtn.addEventListener('click', () => location.reload());
+            // "New" resets the download form in place (a full reload would land on
+            // the Library view in server-save mode, since that's the default view).
+            function resetToSearch() {
+                stopPlayback();
+                if (cachePollTimer) { clearInterval(cachePollTimer); cachePollTimer = null; }
+                // Source state
+                currentVideoId = '';
+                currentSourceId = null;
+                currentSourceLossless = false;
+                currentSrcLabel = 'YouTube';
+                isCached = false;
+                originalThumbnailUrl = '';
+                customThumbnailBase64 = null;
+                currentSrc = '';
+                // Metadata fields + chips
+                els.urlInput.value = '';
+                els.metaTitle.value = '';
+                setAlbums([]);
+                els.metaYear.value = '';
+                els.metaThumb.removeAttribute('src');
+                selectedArtists = []; renderArtistTags();
+                selectedGenres = []; renderGenreTags();
+                els.customTagsContainer.innerHTML = '';
+                // Custom-filename override
+                if (els.filenameCustomToggle) {
+                    els.filenameCustomToggle.checked = false; els.filenameCustom.value = '';
+                    els.filenameCustom.style.display = 'none'; els.filenamePreview.style.display = 'block';
+                    if (els.filenameEditBtn) els.filenameEditBtn.style.display = '';
+                    if (els.filenameAutoBtn) els.filenameAutoBtn.style.display = 'none';
+                }
+                // A/B mixes
+                snapshots = []; activeSnapshotId = null; renderSnapshots();
+                // Hide result panels, show the entry UI again
+                els.preview.style.display = 'none';
+                els.optionsPanel.style.display = 'none';
+                if (els.techPanel) els.techPanel.style.display = 'none';
+                els.success.style.display = 'none';
+                document.getElementById('actionBar').style.display = 'none';
+                hidePipeline();
+                hideSearchResults();
+                els.inputGroup.style.display = '';
+                els.searchBtn.style.display = '';
+                if (els.dropZone) els.dropZone.style.display = '';
+                els.downloadBtn.disabled = false;
+                els.urlInput.focus();
+            }
+            els.uploadNextBtn.addEventListener('click', resetToSearch);
 
             // Clear this session's preview "mix" renders from the SSD cache when
             // the page is closed/reloaded (the source cache is kept). The 2h

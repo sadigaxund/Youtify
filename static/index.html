@@ -91,6 +91,11 @@
                             <span>Audio Effects</span>
                         </div>
                         <div style="display:flex; align-items:center; gap:1rem;">
+                            <label class="original-toggle" title="Render previews as small 128k MP3s instead of lossless FLAC — faster to produce, lower fidelity. Final export quality is unaffected.">
+                                <input type="checkbox" id="fastPreviewToggle" style="display:none">
+                                <div class="toggle-switch"></div>
+                                <span>Fast preview</span>
+                            </label>
                             <label class="original-toggle" title="Cache lossless intermediates so re-rendering similar mixes is faster (uses disk). Not an audio effect.">
                                 <input type="checkbox" id="turboToggle" style="display:none">
                                 <div class="toggle-switch"></div>
@@ -186,12 +191,9 @@
                          can flip between combos without touching the live controls. -->
                     <div id="abCompare" class="ab-compare">
                         <div class="ab-head">
-                            <span><i data-lucide="layers" style="width:12px;height:12px;"></i> Mixes
-                                <span id="genProgress" class="gen-progress" style="display:none;"></span>
-                            </span>
+                            <span><i data-lucide="layers" style="width:12px;height:12px;"></i> Mixes</span>
                             <span style="display:inline-flex; gap:0.3rem;">
-                                <button id="abGenerate" type="button" title="Generate many mixes at once">⊞ Generate</button>
-                                <button id="abClear" type="button" title="Clear mixes & stop generating">Clear</button>
+                                <button id="abClear" type="button" title="Clear mixes">Clear</button>
                             </span>
                         </div>
                         <div id="abList" class="ab-list">
@@ -289,11 +291,18 @@
                         <div
                             style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
                             <label style="font-size:0.7rem; color:var(--text-dim); font-weight:600;">Custom Tags</label>
-                            <button id="addTagBtn" type="button"
-                                style="width:auto; padding:0.25rem 0.6rem; font-size:0.7rem; border-radius:6px; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin:0;">
-                                <i data-lucide="plus" style="width:10px; height:10px;"></i>
-                                <span>Add</span>
-                            </button>
+                            <span style="display:inline-flex; gap:0.3rem;">
+                                <button id="copyMetaBtn" type="button" title="Copy metadata from a saved track"
+                                    style="display:none; width:auto; padding:0.25rem 0.6rem; font-size:0.7rem; border-radius:6px; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin:0;">
+                                    <i data-lucide="copy" style="width:10px; height:10px;"></i>
+                                    <span>Copy from…</span>
+                                </button>
+                                <button id="addTagBtn" type="button"
+                                    style="width:auto; padding:0.25rem 0.6rem; font-size:0.7rem; border-radius:6px; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin:0;">
+                                    <i data-lucide="plus" style="width:10px; height:10px;"></i>
+                                    <span>Add</span>
+                                </button>
+                            </span>
                         </div>
                         <div id="customTagsContainer" style="display:flex; flex-direction:column; gap:0.4rem;"></div>
                     </div>
@@ -427,7 +436,13 @@
                         </div>
                         <!-- Hero header when a facet card is opened -->
                         <div id="libHero" class="lib-hero" style="display:none;">
-                            <img id="libHeroCover" class="lib-hero-cover" alt="">
+                            <div class="lib-hero-cover-wrap">
+                                <img id="libHeroCover" class="lib-hero-cover" alt="">
+                                <button id="libHeroCoverEdit" type="button" class="lib-hero-cover-edit" title="Change image">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                                </button>
+                                <input type="file" id="libHeroCoverUpload" accept="image/*" style="display:none;">
+                            </div>
                             <div class="lib-hero-meta">
                                 <div id="libHeroKind" class="lib-hero-kind"></div>
                                 <div id="libHeroName" class="lib-hero-name"></div>
@@ -456,9 +471,12 @@
                                         <option value="album">Album</option>
                                         <option value="year">Year</option>
                                         <option value="duration">Duration</option>
+                                        <option value="play_count">Plays</option>
+                                        <option value="last_played">Last played</option>
                                     </select>
                                     <button id="libSortDir" type="button" class="lib-ctl-btn lib-ctl-icon" title="Sort direction">↓</button>
                                 </div>
+                                <button id="libFavToggle" type="button" class="lib-ctl-btn lib-ctl-icon lib-fav-toggle" title="Show favorites only">♥</button>
                             </div>
                             <div id="libChips" class="lib-chips"></div>
                         </div>
@@ -478,9 +496,15 @@
                                 <div class="np-time"><span id="npCur">0:00</span><span id="npDur">0:00</span></div>
                             </div>
                             <div class="np-controls">
+                                <button id="npFav" type="button" class="np-btn np-side" title="Favorite">♥</button>
                                 <button id="npPrev" type="button" class="np-btn" title="Previous"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM20 6v12l-9-6z"/></svg></button>
                                 <button id="npPlay" type="button" class="np-btn np-play" title="Play/Pause"></button>
                                 <button id="npNext" type="button" class="np-btn" title="Next"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM4 6l9 6-9 6z"/></svg></button>
+                                <button id="npSleep" type="button" class="np-btn np-side" title="Sleep timer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></button>
+                            </div>
+                            <div id="npQueue" class="np-queue" style="display:none;">
+                                <div class="np-queue-head"><span>Up next</span><button id="npQueueClear" type="button">Clear</button></div>
+                                <div id="npQueueList"></div>
                             </div>
                         </div>
                     </aside>
@@ -525,25 +549,28 @@
                     <div class="edit-fields">
                         <label style="font-size:0.7rem; opacity:0.7;">Title</label>
                         <input type="text" id="libTitle" style="padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;">
-                        <label style="font-size:0.7rem; opacity:0.7;">Artists (comma separated)</label>
-                        <input type="text" id="libArtists" style="padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;">
-                        <label style="font-size:0.7rem; opacity:0.7;">Genres (comma separated)</label>
-                        <input type="text" id="libGenres" style="padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;">
+                        <label style="font-size:0.7rem; opacity:0.7;">Artists</label>
+                        <div id="libArtistsChips"></div>
+                        <label style="font-size:0.7rem; opacity:0.7;">Genres</label>
+                        <div id="libGenresChips"></div>
                         <div style="display:flex; gap:0.5rem;">
-                            <div style="flex:2;"><label style="font-size:0.7rem; opacity:0.7;">Album</label>
-                                <input type="text" id="libAlbum" style="width:100%; padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;"></div>
+                            <div style="flex:2;"><label style="font-size:0.7rem; opacity:0.7;">Albums</label>
+                                <div id="libAlbumChips"></div></div>
                             <div style="flex:1;"><label style="font-size:0.7rem; opacity:0.7;">Year</label>
                                 <input type="text" id="libYear" style="width:100%; padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;"></div>
                         </div>
-                        <label style="font-size:0.7rem; opacity:0.7;">Composer</label>
-                        <input type="text" id="libComposer" style="padding:0.4rem 0.6rem; font-size:0.82rem; border-radius:8px;">
-
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.25rem;">
                             <label style="font-size:0.7rem; color:var(--text-dim); font-weight:600;">Custom Tags</label>
-                            <button id="libAddTagBtn" type="button"
-                                style="width:auto; padding:0.25rem 0.6rem; font-size:0.7rem; border-radius:6px; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin:0;">
-                                <i data-lucide="plus" style="width:10px;height:10px;"></i><span>Add</span>
-                            </button>
+                            <span style="display:inline-flex; gap:0.3rem;">
+                                <button id="libCopyMetaBtn" type="button" title="Copy metadata from another saved track"
+                                    style="width:auto; padding:0.25rem 0.6rem; font-size:0.7rem; border-radius:6px; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin:0;">
+                                    <i data-lucide="copy" style="width:10px;height:10px;"></i><span>Copy from…</span>
+                                </button>
+                                <button id="libAddTagBtn" type="button"
+                                    style="width:auto; padding:0.25rem 0.6rem; font-size:0.7rem; border-radius:6px; background:rgba(255,255,255,0.05); border:1px solid var(--card-border); margin:0;">
+                                    <i data-lucide="plus" style="width:10px;height:10px;"></i><span>Add</span>
+                                </button>
+                            </span>
                         </div>
                         <div id="libCustomTags" style="display:flex; flex-direction:column; gap:0.4rem;"></div>
                     </div>

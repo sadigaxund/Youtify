@@ -46,6 +46,18 @@
                 tt.addEventListener('change', () => localStorage.setItem('youtify_turbo', tt.checked ? '1' : '0'));
             })();
 
+            // Fast preview (128k MP3 instead of lossless FLAC) — persisted too.
+            (function initFastPreview() {
+                const ft = document.getElementById('fastPreviewToggle');
+                if (!ft) return;
+                ft.checked = localStorage.getItem('youtify_fast_preview') === '1';
+                ft.addEventListener('change', () => {
+                    localStorage.setItem('youtify_fast_preview', ft.checked ? '1' : '0');
+                    // Quality changed -> the current render no longer matches.
+                    if (typeof onEffectChange === 'function') onEffectChange();
+                });
+            })();
+
             // --- Elements ---
             const els = {
                 urlInput: document.getElementById('urlInput'),
@@ -80,6 +92,7 @@
                 trimSilenceToggle: document.getElementById('trimSilenceToggle'),
                 silenceThreshSelect: document.getElementById('silenceThreshSelect'),
                 turboToggle: document.getElementById('turboToggle'),
+                fastPreviewToggle: document.getElementById('fastPreviewToggle'),
                 downloadBtn: document.getElementById('downloadBtn'),
                 uploadNextBtn: document.getElementById('uploadNextBtn'),
                 formatSelect: document.getElementById('formatSelect'),
@@ -130,9 +143,7 @@
                 filenameEditBtn: document.getElementById('filenameEditBtn'),
                 filenameAutoBtn: document.getElementById('filenameAutoBtn'),
                 abList: document.getElementById('abList'),
-                abClear: document.getElementById('abClear'),
-                abGenerate: document.getElementById('abGenerate'),
-                genProgress: document.getElementById('genProgress')
+                abClear: document.getElementById('abClear')
             };
 
             // --- Utils ---
