@@ -555,3 +555,23 @@ class AudioMetadataDB:
             except Exception as e:
                 print(f"Warning: failed to index playlist {path}: {e}")
         return count
+
+    def prune_stale(self, meta_dir: str, playlists_dir: str):
+        """Delete DB rows for tracks and playlists that no longer have sidecars."""
+        meta_ids = {os.path.splitext(f)[0] for f in os.listdir(meta_dir) if f.endswith(".json")}
+        pl_ids = {os.path.splitext(f)[0] for f in os.listdir(playlists_dir) if f.endswith(".json")}
+        with self.get_connection() as conn:
+            if meta_ids:
+                ph = ",".join("?" * len(meta_ids))
+                conn.execute(f"DELETE FROM audio WHERE youtube_id NOT IN ({ph})", list(meta_ids))
+                conn.execute(f"DELETE FROM metadata_fields WHERE youtube_id NOT IN ({ph})", list(meta_ids))
+                conn.execute(f"DELETE FROM playlist_tracks WHERE youtube_id NOT IN ({ph})", list(meta_ids))
+            else:
+                conn.execute("DELETE FROM audio")
+                conn.execute("DELETE FROM metadata_fields")
+                conn.execute("DELETE FROM playlist_tracks")
+            if pl_ids:
+                ph = ",".join("?" * len(pl_ids))
+                conn.execute(f"DELETE FROM playlists WHERE id NOT IN ({ph})", list(pl_ids))
+            else:
+                conn.execute("DELETE FROM playlists")

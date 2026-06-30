@@ -126,6 +126,8 @@ def cleanup_stale_sidecars():
                 os.remove(os.path.join(ORIGINALS_DIR, fname))
             except OSError:
                 pass
+    # 4. Prune DB entries that no longer have sidecars.
+    db.prune_stale(META_DIR, PLAYLISTS_DIR)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
