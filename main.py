@@ -70,6 +70,7 @@ from pydantic import BaseModel
 import json
 
 import argparse
+import glob
 import sqlite3
 from youtube_downloader import (
     validate_youtube_url, download_youtube_audio, get_video_info,
@@ -83,6 +84,49 @@ from database import AudioMetadataDB
 from contextlib import asynccontextmanager
 
 
+def cleanup_stale_sidecars():
+    """Remove sidecars/playlists/originals whose MP3 file no longer exists."""
+    if BROWSER_DOWNLOAD_MODE:
+        return
+    # 1. Remove stale meta sidecars.
+    for path in glob.glob(os.path.join(META_DIR, "*.json")):
+        try:
+            with open(path) as f:
+                sc = json.load(f)
+            rel = sc.get("rel_path")
+            if rel and not os.path.exists(os.path.join(DOWNLOAD_DIR, rel)):
+                os.remove(path)
+        except Exception:
+            pass
+    # 2. Clean up playlists: drop missing track_ids; delete if empty.
+    existing_ids = {os.path.splitext(f)[0] for f in os.listdir(META_DIR) if f.endswith(".json")}
+    for path in glob.glob(os.path.join(PLAYLISTS_DIR, "*.json")):
+        try:
+            with open(path) as f:
+                pl = json.load(f)
+            keep = [tid for tid in pl.get("track_ids", []) if tid in existing_ids]
+            if not keep:
+                os.remove(path)
+                cover = os.path.join(PLAYLISTS_DIR, f"{pl['id']}.jpg")
+                if os.path.exists(cover):
+                    os.remove(cover)
+            elif len(keep) < len(pl.get("track_ids", [])):
+                pl["track_ids"] = keep
+                tmp = path + ".tmp"
+                with open(tmp, "w") as f:
+                    json.dump(pl, f, indent=2)
+                os.replace(tmp, path)
+        except Exception:
+            pass
+    # 3. Remove orphaned originals (no sidecar).
+    for fname in os.listdir(ORIGINALS_DIR):
+        vid = os.path.splitext(fname)[0]
+        if not os.path.exists(os.path.join(META_DIR, f"{vid}.json")):
+            try:
+                os.remove(os.path.join(ORIGINALS_DIR, fname))
+            except OSError:
+                pass
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Rebuild the DB index from the on-disk sidecars so the DB is fully
@@ -90,6 +134,7 @@ async def lifespan(app: FastAPI):
     # here at startup time.
     if not BROWSER_DOWNLOAD_MODE:
         try:
+            cleanup_stale_sidecars()
             n = db.rebuild_from_sidecars(META_DIR, DOWNLOAD_DIR)
             p = db.rebuild_playlists_from_sidecars(PLAYLISTS_DIR)
             log.info("Library index: %d track(s), %d playlist(s) loaded from sidecars.", n, p)
@@ -1070,9 +1115,11 @@ def library_detail(audio_id: int):
 
 @app.post("/library/rebuild")
 def library_rebuild():
-    """Re-index the DB from the on-disk sidecars."""
+    """Re-index the DB from the on-disk sidecars (stale entries are purged first)."""
     _require_library()
+    cleanup_stale_sidecars()
     n = db.rebuild_from_sidecars(META_DIR, DOWNLOAD_DIR)
+    db.rebuild_playlists_from_sidecars(PLAYLISTS_DIR)
     return {"indexed": n}
 
 
