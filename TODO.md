@@ -1,2 +1,3 @@
 - [ ] Spotify as a source — DRM means actual audio would come from YouTube matched via Spotify metadata (spotdl-style). Decide if wanted.
 - [ ] Universal scraper — yt-dlp already supports 1000+ sites; main work is relaxing the YouTube-only URL whitelist (`youtube_downloader.py` `validate_youtube_url`) and dropping the 11-char ID assumption.
+- [ ] A cache and sync feature. Where you can define your storage base like a homelab HDD that you mainly save all the sidecars + big files, and a way to cache only necessary files into a another client's local storage, to improve the Lifespan of the HDD + faster playbacks
